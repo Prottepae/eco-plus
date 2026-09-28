@@ -14,7 +14,7 @@
   const elements = Object.fromEntries([
     'monthView', 'historyView', 'monthHeading', 'monthPicker', 'balanceAmount', 'negativeNote',
     'spentPercent', 'progressTrack', 'progressFill', 'incomeAmount', 'spentAmount', 'editIncomeButton',
-    'expenseList', 'historyList', 'historyEmpty', 'expenseDialog', 'expenseForm', 'expenseId',
+    'awardStrip', 'expenseList', 'historyList', 'historyEmpty', 'expenseDialog', 'expenseForm', 'expenseId',
     'expenseAmount', 'expenseName', 'expenseCategory', 'expenseDate', 'expenseDialogTitle',
     'expenseMonthLabel', 'expenseError', 'deleteExpenseButton', 'monthDialog', 'monthForm',
     'monthDate', 'monthIncome', 'monthError', 'incomeDialog', 'incomeForm', 'incomeValue',
@@ -24,6 +24,7 @@
   let data = loadData();
   let selectedMonth = currentMonthKey();
   let activeView = 'monthView';
+  let audioContext = null;
 
   function currentMonthKey() {
     const now = new Date();
@@ -93,6 +94,87 @@
     return `${key}-${String(day).padStart(2, '0')}`;
   }
 
+  function triggerHaptic(pattern) {
+    if ('vibrate' in navigator) navigator.vibrate(pattern);
+  }
+
+  function ensureAudioContext() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return null;
+    if (!audioContext) audioContext = new AudioCtor();
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+    return audioContext;
+  }
+
+  function playTone(frequency, duration, type, gainValue, delay = 0) {
+    const context = ensureAudioContext();
+    if (!context) return;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, context.currentTime + delay);
+    gain.gain.setValueAtTime(0.0001, context.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(gainValue, context.currentTime + delay + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + delay + duration);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(context.currentTime + delay);
+    oscillator.stop(context.currentTime + delay + duration);
+  }
+
+  function triggerFeedback(type = 'success') {
+    if (type === 'success') {
+      triggerHaptic([10]);
+      playTone(660, 0.08, 'triangle', 0.06, 0);
+      playTone(840, 0.11, 'triangle', 0.04, 0.08);
+    } else if (type === 'delete') {
+      triggerHaptic([18, 38, 18]);
+      playTone(180, 0.14, 'sawtooth', 0.05, 0);
+      playTone(120, 0.18, 'square', 0.04, 0.08);
+    } else {
+      triggerHaptic([30, 20, 30]);
+      playTone(340, 0.12, 'square', 0.04, 0);
+      playTone(290, 0.2, 'square', 0.03, 0.12);
+    }
+  }
+
+  function pulseElement(selector) {
+    const element = document.querySelector(selector);
+    if (!element) return;
+    element.classList.remove('is-popping');
+    void element.offsetWidth;
+    element.classList.add('is-popping');
+  }
+
+  function getAwards(month) {
+    if (!month) return [{ icon: '🏁', label: 'Começa o mês', detail: 'define a tua renda' }];
+
+    const { spent, balance } = monthTotals(month);
+    const percent = month.income > 0 ? spent / month.income * 100 : 0;
+    const awards = [];
+
+    if (month.expenses.length === 0) {
+      awards.push({ icon: '🌱', label: 'Planeamento', detail: 'sem despesas' });
+    }
+    if (month.expenses.length >= 3) {
+      awards.push({ icon: '✨', label: 'Fluxo em foco', detail: 'vários movimentos' });
+    }
+    if (month.income > 0 && percent <= 50) {
+      awards.push({ icon: '🏆', label: 'Controlo total', detail: 'até metade gasto' });
+    }
+    if (balance >= month.income * 0.7) {
+      awards.push({ icon: '💚', label: 'Mês saudável', detail: 'saldo forte' });
+    }
+    if (balance < 0) {
+      awards.push({ icon: '🔥', label: 'Mês apertado', detail: 'alerta de gasto' });
+    }
+    if (month.expenses.some(expense => expense.category === 'Subscrições')) {
+      awards.push({ icon: '📱', label: 'Assinaturas', detail: 'em ordem' });
+    }
+
+    return awards.slice(0, 3);
+  }
+
   function render() {
     renderMonth();
     renderHistory();
@@ -111,6 +193,7 @@
       elements.progressTrack.setAttribute('aria-valuenow', '0');
       elements.negativeNote.hidden = true;
       elements.editIncomeButton.hidden = true;
+      elements.awardStrip.innerHTML = '<span class="award-pill award-pill--muted"><span>🏁</span>Começa o mês</span>';
       elements.expenseList.innerHTML = `<div class="empty-state"><span class="empty-icon" aria-hidden="true">€</span><h2>Sem mês registado</h2><p>Cria este mês e define quanto recebeste para começares.</p><button class="text-action" type="button" data-action="create-month">Criar mês</button></div>`;
       return;
     }
@@ -126,6 +209,9 @@
     elements.progressTrack.setAttribute('aria-valuenow', String(Math.min(100, Math.max(0, percentage))));
     elements.negativeNote.hidden = balance >= 0;
     elements.editIncomeButton.hidden = false;
+    elements.awardStrip.innerHTML = getAwards(month).map(award => `<span class="award-pill award-pill--${balance < 0 ? 'warning' : 'success'}"><span>${award.icon}</span>${award.label}</span>`).join('');
+    pulseElement('.balance-amount');
+    pulseElement('.summary-item strong');
 
     if (!month.expenses.length) {
       elements.expenseList.innerHTML = '<div class="empty-state"><span class="empty-icon" aria-hidden="true">↘</span><h2>Sem despesas ainda</h2><p>Adiciona a primeira despesa para veres o teu saldo atualizado.</p></div>';
@@ -252,6 +338,7 @@
     if (!Number.isFinite(amount) || amount <= 0 || !name || !date || date.slice(0, 7) !== selectedMonth) {
       elements.expenseError.textContent = date && date.slice(0, 7) !== selectedMonth ? 'A data da despesa tem de pertencer ao mês selecionado.' : 'Confirma o valor, a descrição e a data.';
       elements.expenseError.hidden = false;
+      triggerFeedback('warning');
       return;
     }
     const month = getMonth();
@@ -262,6 +349,7 @@
     saveData();
     elements.expenseDialog.close();
     render();
+    triggerFeedback('success');
   });
 
   elements.deleteExpenseButton.addEventListener('click', () => {
@@ -273,6 +361,7 @@
     saveData();
     elements.expenseDialog.close();
     render();
+    triggerFeedback('delete');
   });
 
   elements.monthForm.addEventListener('submit', event => {
@@ -282,11 +371,13 @@
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(key) || !Number.isFinite(income) || income < 0) {
       elements.monthError.textContent = 'Indica um mês e um rendimento válido.';
       elements.monthError.hidden = false;
+      triggerFeedback('warning');
       return;
     }
     if (data.months[key]) {
       elements.monthError.textContent = 'Este mês já existe. Seleciona-o para consultar ou alterar o rendimento.';
       elements.monthError.hidden = false;
+      triggerFeedback('warning');
       return;
     }
     data.months[key] = { income: Math.round(income * 100) / 100, expenses: [] };
@@ -295,6 +386,7 @@
     elements.monthDialog.close();
     render();
     showView('monthView');
+    triggerFeedback('success');
   });
 
   elements.incomeForm.addEventListener('submit', event => {
@@ -303,12 +395,14 @@
     if (!Number.isFinite(income) || income < 0) {
       elements.incomeError.textContent = 'Indica um valor igual ou superior a zero.';
       elements.incomeError.hidden = false;
+      triggerFeedback('warning');
       return;
     }
     getMonth().income = Math.round(income * 100) / 100;
     saveData();
     elements.incomeDialog.close();
     render();
+    triggerFeedback('success');
   });
 
   document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
@@ -321,6 +415,7 @@
     document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
     localStorage.setItem('meu-dinheiro-theme', isDark ? 'dark' : 'light');
     elements.themeToggle.setAttribute('aria-label', isDark ? 'Ativar modo claro' : 'Ativar modo escuro');
+    triggerFeedback('success');
   });
 
   const savedTheme = localStorage.getItem('meu-dinheiro-theme');
