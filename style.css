@@ -42,6 +42,10 @@ button { color: inherit; }
 .topbar { height: 50px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .brand { display: inline-flex; gap: 10px; align-items: center; color: var(--ink); text-decoration: none; font-family: Manrope, sans-serif; font-size: 15px; font-weight: 800; }
 .brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; color: #fff; background: var(--green); font-size: 17px; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.user-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.user-pill__label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.user-pill strong { font-size: 12px; }
 .icon-button { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); cursor: pointer; transition: transform .18s ease, background .2s ease; }
 .icon-button:active, button:active { transform: scale(.97); }
 .icon-button svg { width: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }

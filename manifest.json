@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Meu Dinheiro",
-  "short_name": "Meu Dinheiro",
-  "description": "Controla o teu dinheiro, mês a mês, com privacidade e simplicidade.",
+  "name": "Eco+",
+  "short_name": "Eco+",
+  "description": "Eco+ ajuda-te a controlar o teu dinheiro, mês a mês.",
   "lang": "pt-PT",
   "start_url": "./",
   "scope": "./",

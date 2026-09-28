@@ -1,7 +1,9 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'meu-dinheiro-v1';
+  const STORAGE_KEY = 'eco-plus-v1';
+  const LEGACY_STORAGE_KEY = 'meu-dinheiro-v1';
+  const THEME_KEY = 'eco-plus-theme';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -18,7 +20,8 @@
     'expenseAmount', 'expenseName', 'expenseCategory', 'expenseDate', 'expenseDialogTitle',
     'expenseMonthLabel', 'expenseError', 'deleteExpenseButton', 'monthDialog', 'monthForm',
     'monthDate', 'monthIncome', 'monthError', 'incomeDialog', 'incomeForm', 'incomeValue',
-    'incomeMonthLabel', 'incomeError', 'themeToggle'
+    'incomeMonthLabel', 'incomeError', 'themeToggle', 'userPill', 'userNameLabel', 'profileDialog',
+    'profileForm', 'profileName', 'profileError', 'expenseType'
   ].map(id => [id, document.getElementById(id)]));
 
   let data = loadData();
@@ -33,20 +36,33 @@
 
   function loadData() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"months":{}}');
-      if (!parsed || typeof parsed.months !== 'object' || Array.isArray(parsed.months)) return { months: {} };
+      const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY) || '{"months":{},"profile":{"name":""}}';
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed.months !== 'object' || Array.isArray(parsed.months)) return { months: {}, profile: { name: '' } };
+      if (!parsed.profile || typeof parsed.profile !== 'object') parsed.profile = { name: '' };
+      parsed.profile.name = typeof parsed.profile.name === 'string' ? parsed.profile.name : '';
       for (const [key, month] of Object.entries(parsed.months)) {
         if (!/^\d{4}-\d{2}$/.test(key) || !month || !Number.isFinite(Number(month.income))) {
           delete parsed.months[key];
           continue;
         }
         month.income = Math.max(0, Number(month.income));
-        month.expenses = Array.isArray(month.expenses) ? month.expenses.filter(isValidExpense) : [];
+        month.expenses = Array.isArray(month.expenses) ? month.expenses.map(normalizeExpense).filter(Boolean) : [];
+      }
+      if (localStorage.getItem(STORAGE_KEY) === null && localStorage.getItem(LEGACY_STORAGE_KEY) !== null) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       }
       return parsed;
     } catch {
-      return { months: {} };
+      return { months: {}, profile: { name: '' } };
     }
+  }
+
+  function normalizeExpense(expense) {
+    if (!expense || typeof expense !== 'object') return null;
+    if (!isValidExpense(expense)) return null;
+    const entryType = expense.type === 'refund' ? 'refund' : 'expense';
+    return { ...expense, type: entryType, amount: Number(expense.amount) };
   }
 
   function isValidExpense(expense) {
@@ -76,8 +92,9 @@
   }
 
   function monthTotals(month) {
-    const spent = month.expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
-    return { spent, balance: Number(month.income) - spent };
+    const spent = month.expenses.reduce((sum, expense) => sum + (expense.type === 'expense' ? Number(expense.amount) : 0), 0);
+    const refunds = month.expenses.reduce((sum, expense) => sum + (expense.type === 'refund' ? Number(expense.amount) : 0), 0);
+    return { spent, refunds, balance: Number(month.income) - spent + refunds };
   }
 
   function getMonth() {
@@ -198,7 +215,7 @@
       return;
     }
 
-    const { spent, balance } = monthTotals(month);
+    const { spent, refunds, balance } = monthTotals(month);
     const percentage = month.income > 0 ? spent / month.income * 100 : (spent > 0 ? 100 : 0);
     const displayPercent = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 }).format(percentage);
     elements.balanceAmount.textContent = formatCurrency(balance);
@@ -210,6 +227,9 @@
     elements.negativeNote.hidden = balance >= 0;
     elements.editIncomeButton.hidden = false;
     elements.awardStrip.innerHTML = getAwards(month).map(award => `<span class="award-pill award-pill--${balance < 0 ? 'warning' : 'success'}"><span>${award.icon}</span>${award.label}</span>`).join('');
+    if (refunds > 0) {
+      elements.awardStrip.innerHTML += `<span class="award-pill award-pill--muted"><span>↩️</span>Reembolsos ${formatCurrency(refunds)}</span>`;
+    }
     pulseElement('.balance-amount');
     pulseElement('.summary-item strong');
 
@@ -222,10 +242,14 @@
     const sorted = [...month.expenses].sort((a, b) => b.date.localeCompare(a.date));
     elements.expenseList.innerHTML = sorted.map((expense, index) => {
       const date = new Date(`${expense.date}T12:00:00`);
+      const isRefund = expense.type === 'refund';
+      const sign = isRefund ? '+' : '−';
+      const valueClass = isRefund ? 'expense-value expense-value--refund' : 'expense-value';
+      const metaLabel = isRefund ? 'Reembolso' : expense.category;
       return `<button class="expense-row" type="button" data-expense-id="${escapeHTML(expense.id)}" style="animation-delay:${Math.min(index, 7) * 35}ms">
-        <span class="category-icon" aria-hidden="true">${categoryIcons[expense.category] || '✳️'}</span>
-        <span class="expense-main"><span class="expense-name">${escapeHTML(expense.name)}</span><span class="expense-meta">${escapeHTML(expense.category)} · ${dateFormatter.format(date)}</span></span>
-        <span class="expense-value">−${formatCurrency(Number(expense.amount))}</span>
+        <span class="category-icon" aria-hidden="true">${isRefund ? '↩️' : (categoryIcons[expense.category] || '✳️')}</span>
+        <span class="expense-main"><span class="expense-name">${escapeHTML(expense.name)}</span><span class="expense-meta">${escapeHTML(metaLabel)} · ${dateFormatter.format(date)}</span></span>
+        <span class="${valueClass}">${sign}${formatCurrency(Number(expense.amount))}</span>
       </button>`;
     }).join('');
   }
@@ -236,11 +260,11 @@
     elements.historyList.hidden = keys.length === 0;
     elements.historyList.innerHTML = keys.map((key, index) => {
       const month = data.months[key];
-      const { spent, balance } = monthTotals(month);
+      const { spent, refunds, balance } = monthTotals(month);
       return `<button class="history-row" type="button" data-month-key="${key}" style="animation-delay:${Math.min(index, 7) * 40}ms">
         <span class="history-month">${escapeHTML(formatMonth(key))}</span>
         <span class="history-balance${balance < 0 ? ' is-negative' : ''}">${formatCurrency(balance)}</span>
-        <span class="history-stats"><span>Recebido: <strong>${formatCurrency(month.income)}</strong></span><span>Gasto: <strong>${formatCurrency(spent)}</strong></span><span>Restante: <strong>${formatCurrency(balance)}</strong></span></span>
+        <span class="history-stats"><span>Recebido: <strong>${formatCurrency(month.income)}</strong></span><span>Gasto: <strong>${formatCurrency(spent)}</strong></span><span>Reemb.: <strong>${formatCurrency(refunds)}</strong></span><span>Restante: <strong>${formatCurrency(balance)}</strong></span></span>
       </button>`;
     }).join('');
   }
@@ -283,7 +307,8 @@
     elements.expenseName.value = expense?.name || '';
     elements.expenseCategory.value = expense?.category || CATEGORIES[0][0];
     elements.expenseDate.value = expense?.date || dateFromKey(selectedMonth);
-    elements.expenseDialogTitle.textContent = expense ? 'Editar despesa' : 'Nova despesa';
+    elements.expenseType.value = expense?.type === 'refund' ? 'refund' : 'expense';
+    elements.expenseDialogTitle.textContent = expense ? 'Editar movimento' : 'Novo movimento';
     elements.expenseMonthLabel.textContent = formatMonth(selectedMonth);
     elements.expenseForm.querySelector('.submit-button').textContent = expense ? 'Guardar alterações' : 'Adicionar despesa';
     elements.deleteExpenseButton.hidden = !expense;
@@ -335,14 +360,15 @@
     const amount = Number(elements.expenseAmount.value);
     const name = elements.expenseName.value.trim();
     const date = elements.expenseDate.value;
+    const type = elements.expenseType.value === 'refund' ? 'refund' : 'expense';
     if (!Number.isFinite(amount) || amount <= 0 || !name || !date || date.slice(0, 7) !== selectedMonth) {
-      elements.expenseError.textContent = date && date.slice(0, 7) !== selectedMonth ? 'A data da despesa tem de pertencer ao mês selecionado.' : 'Confirma o valor, a descrição e a data.';
+      elements.expenseError.textContent = date && date.slice(0, 7) !== selectedMonth ? 'A data do movimento tem de pertencer ao mês selecionado.' : 'Confirma o valor, a descrição e a data.';
       elements.expenseError.hidden = false;
       triggerFeedback('warning');
       return;
     }
     const month = getMonth();
-    const expense = { id: elements.expenseId.value || createId(), name, amount: Math.round(amount * 100) / 100, category: elements.expenseCategory.value, date };
+    const expense = { id: elements.expenseId.value || createId(), name, amount: Math.round(amount * 100) / 100, category: elements.expenseCategory.value, date, type };
     const existingIndex = month.expenses.findIndex(item => item.id === expense.id);
     if (existingIndex >= 0) month.expenses[existingIndex] = expense;
     else month.expenses.push(expense);
@@ -410,20 +436,48 @@
     if (event.target === dialog) dialog.close();
   }));
 
+  elements.userPill.addEventListener('click', () => {
+    elements.profileName.value = data.profile.name || '';
+    elements.profileError.hidden = true;
+    elements.profileDialog.showModal();
+  });
+
+  elements.profileForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const name = elements.profileName.value.trim();
+    if (!name) {
+      elements.profileError.textContent = 'Escreve um nome válido.';
+      elements.profileError.hidden = false;
+      return;
+    }
+    data.profile.name = name;
+    saveData();
+    elements.profileDialog.close();
+    renderUserName();
+    triggerFeedback('success');
+  });
+
+  function renderUserName() {
+    const name = (data.profile && data.profile.name ? data.profile.name : 'Tu').trim();
+    elements.userNameLabel.textContent = name;
+    elements.userPill.setAttribute('aria-label', `Editar nome: ${name}`);
+  }
+
   elements.themeToggle.addEventListener('click', () => {
     const isDark = document.documentElement.dataset.theme !== 'dark';
     document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
-    localStorage.setItem('meu-dinheiro-theme', isDark ? 'dark' : 'light');
+    localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
     elements.themeToggle.setAttribute('aria-label', isDark ? 'Ativar modo claro' : 'Ativar modo escuro');
     triggerFeedback('success');
   });
 
-  const savedTheme = localStorage.getItem('meu-dinheiro-theme');
+  const savedTheme = localStorage.getItem(THEME_KEY) || localStorage.getItem('meu-dinheiro-theme');
   if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
     document.documentElement.dataset.theme = 'dark';
     elements.themeToggle.setAttribute('aria-label', 'Ativar modo claro');
   }
   elements.expenseCategory.innerHTML = CATEGORIES.map(([category, emoji]) => `<option value="${escapeHTML(category)}">${emoji} ${escapeHTML(category)}</option>`).join('');
+  renderUserName();
   render();
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
