@@ -1,44 +1,53 @@
-const CACHE_NAME = 'meu-dinheiro-shell-v1';
+const CACHE_NAME = 'eco-plus-shell-v2';
 const APP_SHELL = [
   './',
-  './index.html',
-  './style.css',
-  './app.js',
-  './manifest.json',
-  './icons/icon.svg',
-  './icons/icon-180.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
-];
+  'index.html',
+  'style.css',
+  'app.js',
+  'manifest.json',
+  'icons/icon.svg',
+  'icons/icon-180.png',
+  'icons/icon-192.png',
+  'icons/icon-512.png'
+].map(path => new URL(path, self.registration.scope).href);
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(APP_SHELL.map(url => new Request(url, { cache: 'reload' })));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(
-    keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-  )));
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => (key.startsWith('eco-plus-shell-') || key === 'meu-dinheiro-shell-v1') && key !== CACHE_NAME).map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const requestUrl = new URL(event.request.url);
-  if (requestUrl.origin !== self.location.origin) return;
+  const scopeUrl = new URL(self.registration.scope);
+  if (requestUrl.origin !== scopeUrl.origin || !requestUrl.pathname.startsWith(scopeUrl.pathname)) return;
 
-  event.respondWith(caches.match(event.request).then(cached => {
-    if (cached) return cached;
-    return fetch(event.request).then(response => {
-      if (response.ok && requestUrl.origin === self.location.origin) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-      }
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    try {
+      const request = new Request(event.request, { cache: 'no-cache' });
+      const response = await fetch(request);
+      if (response.ok) await cache.put(event.request, response.clone());
       return response;
-    }).catch(() => {
-      if (event.request.mode === 'navigate') return caches.match('./index.html');
+    } catch {
+      const cached = await cache.match(event.request, { ignoreSearch: event.request.mode === 'navigate' });
+      if (cached) return cached;
+      if (event.request.mode === 'navigate') {
+        const appEntry = await cache.match(new URL('index.html', scopeUrl).href);
+        if (appEntry) return appEntry;
+      }
       throw new Error('Recurso indisponível offline');
-    });
-  }));
+    }
+  })());
 });

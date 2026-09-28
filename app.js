@@ -480,6 +480,27 @@
   renderUserName();
   render();
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
+    const updateReloadKey = 'eco-plus-sw-update-reload';
+    try { sessionStorage.removeItem(updateReloadKey); } catch {}
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    let updateReloadScheduled = false;
+    if (hadController) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (updateReloadScheduled) return;
+        updateReloadScheduled = true;
+        try {
+          if (sessionStorage.getItem(updateReloadKey)) return;
+          sessionStorage.setItem(updateReloadKey, '1');
+        } catch {}
+        window.location.reload();
+      });
+    }
+    window.addEventListener('load', () => {
+      const appBase = new URL('./', window.location.href);
+      navigator.serviceWorker.register(new URL('service-worker.js', appBase), {
+        scope: appBase.pathname,
+        updateViaCache: 'none'
+      }).then(registration => registration.update()).catch(() => {});
+    });
   }
 })();
