@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f5f0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Meu Dinheiro">
+  <meta name="description" content="Controla o teu dinheiro, mês a mês, com privacidade e simplicidade.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+  <link rel="stylesheet" href="style.css">
+  <title>Meu Dinheiro</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#mes" aria-label="Meu Dinheiro, início">
+        <span class="brand-mark" aria-hidden="true">€</span>
+        <span>meu dinheiro</span>
+      </a>
+      <button class="icon-button theme-toggle" id="themeToggle" type="button" aria-label="Ativar modo escuro" title="Alternar tema">
+        <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+        <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 14.1A8.5 8.5 0 0 1 9.9 3.2 8.5 8.5 0 1 0 20.8 14.1Z"/></svg>
+      </button>
+    </header>
+
+    <nav class="view-tabs" aria-label="Navegação principal">
+      <button class="view-tab is-active" type="button" data-view="monthView">Mês</button>
+      <button class="view-tab" type="button" data-view="historyView">Histórico</button>
+    </nav>
+
+    <main>
+      <section class="view-panel" id="monthView" aria-labelledby="monthHeading">
+        <div class="month-heading-row">
+          <div>
+            <p class="eyebrow">O teu resumo</p>
+            <h1 id="monthHeading">Este mês</h1>
+          </div>
+          <label class="month-picker-wrap" aria-label="Selecionar mês">
+            <select id="monthPicker" class="month-picker"></select>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg>
+          </label>
+        </div>
+
+        <section class="balance-card" aria-label="Saldo disponível">
+          <div class="balance-card-top">
+            <span class="balance-label">Disponível</span>
+            <span class="balance-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H20v14H6.5A2.5 2.5 0 0 1 4 16.5zM4 8h16m-4 5h.01"/><path d="M4 9V6a2 2 0 0 1 2-2h11"/></svg>
+            </span>
+          </div>
+          <p class="balance-amount" id="balanceAmount">0,00 €</p>
+          <p class="negative-note" id="negativeNote" hidden>O saldo deste mês está negativo.</p>
+          <div class="progress-area">
+            <div class="progress-meta"><span>Dinheiro utilizado</span><strong id="spentPercent">0%</strong></div>
+            <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Percentagem do rendimento gasto" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span class="progress-fill" id="progressFill"></span>
+            </div>
+          </div>
+        </section>
+
+        <div class="summary-grid" aria-label="Resumo do mês">
+          <article class="summary-item"><span class="summary-dot income-dot"></span><span class="summary-label">Recebido</span><strong id="incomeAmount">0,00 €</strong><button class="text-action" id="editIncomeButton" type="button">Editar</button></article>
+          <article class="summary-item"><span class="summary-dot spent-dot"></span><span class="summary-label">Gasto</span><strong id="spentAmount">0,00 €</strong></article>
+        </div>
+
+        <div class="section-heading expense-heading">
+          <div><p class="eyebrow">Movimentos</p><h2>Despesas</h2></div>
+          <button class="text-action" id="newMonthButton" type="button">+ Novo mês</button>
+        </div>
+        <div class="expense-list" id="expenseList"></div>
+        <button class="floating-add" id="addExpenseButton" type="button" aria-label="Adicionar despesa" title="Adicionar despesa">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </section>
+
+      <section class="view-panel history-panel" id="historyView" aria-labelledby="historyHeading" hidden>
+        <div class="section-heading history-title">
+          <div><p class="eyebrow">Visão geral</p><h1 id="historyHeading">Histórico</h1></div>
+          <button class="primary-small" id="historyNewMonthButton" type="button">+ Novo mês</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+        <div class="empty-state history-empty" id="historyEmpty" hidden>
+          <span class="empty-icon" aria-hidden="true">↗</span>
+          <h2>Ainda sem histórico</h2>
+          <p>Cria o teu primeiro mês para começares a acompanhar o teu dinheiro.</p>
+          <button class="primary-button" id="firstMonthButton" type="button">Criar primeiro mês</button>
+        </div>
+      </section>
+    </main>
+    <footer class="privacy-note"><span class="privacy-lock" aria-hidden="true">●</span> Os teus dados ficam apenas neste dispositivo.</footer>
+  </div>
+
+  <dialog class="sheet-dialog" id="expenseDialog" aria-labelledby="expenseDialogTitle">
+    <form class="sheet-form" id="expenseForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow" id="expenseMonthLabel">Mês</p><h2 id="expenseDialogTitle">Nova despesa</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <input id="expenseId" type="hidden">
+      <label class="field-label" for="expenseAmount">Valor</label>
+      <div class="amount-input-wrap"><input id="expenseAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0,00" required><span>€</span></div>
+      <label class="field-label" for="expenseName">Descrição</label>
+      <input class="text-input" id="expenseName" name="name" type="text" maxlength="60" placeholder="Ex.: Supermercado" required>
+      <div class="field-row">
+        <div class="field-column"><label class="field-label" for="expenseCategory">Categoria</label><select class="text-input" id="expenseCategory" name="category" required></select></div>
+        <div class="field-column"><label class="field-label" for="expenseDate">Data</label><input class="text-input" id="expenseDate" name="date" type="date" required></div>
+      </div>
+      <p class="form-error" id="expenseError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Adicionar despesa</button>
+      <button class="delete-button" id="deleteExpenseButton" type="button" hidden>Eliminar despesa</button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="monthDialog" aria-labelledby="monthDialogTitle">
+    <form class="sheet-form" id="monthForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Organiza o teu dinheiro</p><h2 id="monthDialogTitle">Novo mês</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <label class="field-label" for="monthDate">Mês</label>
+      <input class="text-input" id="monthDate" name="month" type="month" required>
+      <label class="field-label" for="monthIncome">Quanto recebeste?</label>
+      <div class="amount-input-wrap"><input id="monthIncome" name="income" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00" required><span>€</span></div>
+      <p class="form-error" id="monthError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Criar mês</button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="incomeDialog" aria-labelledby="incomeDialogTitle">
+    <form class="sheet-form" id="incomeForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow" id="incomeMonthLabel">Mês</p><h2 id="incomeDialogTitle">Alterar rendimento</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <label class="field-label" for="incomeValue">Valor recebido</label>
+      <div class="amount-input-wrap"><input id="incomeValue" name="income" type="number" inputmode="decimal" min="0" step="0.01" required><span>€</span></div>
+      <p class="form-error" id="incomeError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Guardar rendimento</button>
+    </form>
+  </dialog>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
