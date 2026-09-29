@@ -7,7 +7,7 @@
   const LOCAL_BACKUP_PREFIX = 'eco-plus-local-backup-v1-';
   const THEME_KEY = 'eco-plus-theme';
   const API_BASE = 'https://mybudget-api.alexandre-kkh.workers.dev';
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.1.1';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -39,6 +39,7 @@
   let activeView = 'monthView';
   let audioContext = null;
   let authMode = 'checking';
+  let authState = 'checking';
   let authenticatedUser = null;
   let pendingRemoteData = null;
   let syncError = '';
@@ -631,7 +632,6 @@
   elements.syncDecisionDialog.addEventListener('close', () => {
     if (authMode !== 'pending') return;
     authMode = 'local';
-    authenticatedUser = null;
     data = loadData();
     localData = cloneData(data);
     render();
@@ -660,6 +660,10 @@
   });
 
   elements.syncAction.addEventListener('click', () => {
+    if (authState === 'authenticated' && authMode !== 'synced') {
+      verifySession();
+      return;
+    }
     if (authMode === 'synced') {
       flushRemoteSave();
       return;
@@ -694,6 +698,7 @@
     elements.syncNotice.classList.toggle('is-error', state === 'error');
     elements.syncNotice.classList.toggle('is-loading', state === 'checking' || state === 'syncing');
     if (state === 'checking') {
+      authState = 'checking';
       elements.syncModeLabel.textContent = 'A verificar sessão';
       elements.syncMessage.textContent = 'A aplicação continua disponível em modo local.';
     } else if (state === 'syncing') {
@@ -708,26 +713,37 @@
     } else if (authMode === 'pending') {
       elements.syncModeLabel.textContent = 'Escolhe os dados a sincronizar';
       elements.syncMessage.textContent = 'A tua conta está ligada. Os dados locais continuam preservados até escolheres como avançar.';
+    } else if (authState === 'authenticated') {
+      elements.syncModeLabel.textContent = 'Sessão GitHub ativa';
+      elements.syncMessage.textContent = 'Os teus dados continuam guardados neste dispositivo. Escolhe sincronizar quando quiseres associá-los à tua conta.';
     } else {
       elements.syncModeLabel.textContent = 'Modo local';
       elements.syncMessage.textContent = 'Os teus dados estão guardados neste dispositivo. Entra com GitHub para sincronizar entre dispositivos.';
     }
-    elements.topbarLogoutButton.hidden = authMode !== 'synced' && authMode !== 'pending';
-    elements.syncAction.hidden = authMode === 'synced' && state !== 'error';
+    const isChecking = authState === 'checking';
+    const isAuthenticated = authState === 'authenticated';
+    elements.topbarLogoutButton.hidden = !isAuthenticated;
+    elements.syncAction.hidden = isChecking || (isAuthenticated && state !== 'error');
     elements.syncAction.textContent = authMode === 'synced' && state === 'error'
       ? 'Tentar sincronizar novamente'
+      : authState === 'authenticated' && authMode !== 'synced'
+        ? 'Escolher dados para sincronizar'
       : state === 'checking' ? 'Ver opções de sincronização' : 'Sincronizar os meus dados';
     elements.profileSyncStatus.textContent = authMode === 'synced'
       ? `Modo sincronizado${authenticatedUser?.login ? ` com GitHub como ${authenticatedUser.login}` : ''}.`
       : authMode === 'pending'
         ? 'Sessão iniciada. Escolhe como combinar os dados antes de sincronizar.'
         : state === 'error'
-          ? 'Não foi possível verificar a sessão. Podes continuar em modo local.'
-          : 'Modo local: os dados ficam guardados neste dispositivo.';
-    elements.githubLoginButton.hidden = authMode === 'synced';
-    elements.githubCreateButton.hidden = authMode === 'synced';
-    elements.logoutButton.hidden = authMode !== 'synced' && authMode !== 'pending';
-    elements.restoreLocalBackupButton.hidden = authMode === 'synced' || !getLocalBackupKeys().length;
+          ? authState === 'authenticated'
+            ? 'A sessão GitHub está ativa, mas os dados não foram carregados. Os dados locais foram mantidos; tenta novamente.'
+            : 'Não foi possível verificar a sessão. Podes continuar em modo local.'
+          : authState === 'authenticated'
+            ? 'Sessão GitHub ativa; a sincronização ainda não foi selecionada.'
+            : 'Modo local: os dados ficam guardados neste dispositivo.';
+    elements.githubLoginButton.hidden = isChecking || isAuthenticated;
+    elements.githubCreateButton.hidden = isChecking || isAuthenticated;
+    elements.logoutButton.hidden = !isAuthenticated;
+    elements.restoreLocalBackupButton.hidden = isChecking || isAuthenticated || !getLocalBackupKeys().length;
     renderUserName();
   }
 
@@ -774,6 +790,7 @@
   function enterSyncedMode(nextData, shouldUpload = false) {
     if (!preserveLocalBackup()) return;
     authMode = 'synced';
+    authState = 'authenticated';
     data = normalizeAppData(cloneData(nextData));
     elements.topbarLogoutButton.hidden = false;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
@@ -806,10 +823,13 @@
   async function verifySession() {
     if (sessionCheckInFlight || authMode === 'pending') return;
     sessionCheckInFlight = true;
+    authMode = 'checking';
+    setSyncStatus('checking');
     try {
       const response = await apiFetch('/api/me', { credentials: 'include' });
       if (response.status === 401) {
         authMode = 'local';
+        authState = 'unauthenticated';
         data = loadData();
         localData = cloneData(data);
         render();
@@ -820,6 +840,7 @@
       const session = await response.json();
       if (!session.authenticated) {
         authMode = 'local';
+        authState = 'unauthenticated';
         data = loadData();
         localData = cloneData(data);
         render();
@@ -828,6 +849,9 @@
       }
 
       authenticatedUser = session.user || null;
+  authState = 'authenticated';
+  authMode = 'synced';
+  setSyncStatus('authenticated');
       localData = loadData();
       let remoteData;
       try {
@@ -837,9 +861,13 @@
         syncError = '';
       } catch {
         const cachedData = localStorage.getItem(syncCacheKey());
-        if (!cachedData) throw new Error('Não foi possível carregar os dados da conta.');
-        remoteData = normalizeAppData(JSON.parse(cachedData));
+        remoteData = cachedData ? normalizeAppData(JSON.parse(cachedData)) : cloneData(localData);
+        data = remoteData;
+        authMode = 'local';
         syncError = 'Não foi possível sincronizar. Os teus dados continuam guardados neste dispositivo.';
+        render();
+        setSyncStatus('error');
+        return;
       }
 
       localData = loadData();
@@ -856,7 +884,10 @@
         enterSyncedMode(remoteData);
       }
     } catch (error) {
-      authenticatedUser = null;
+      if (authState !== 'authenticated') {
+        authenticatedUser = null;
+        authState = 'unauthenticated';
+      }
       authMode = 'local';
       data = loadData();
       localData = cloneData(data);
@@ -884,6 +915,7 @@
       syncError = 'Não foi possível confirmar o fim da sessão com o serviço. Os teus dados locais foram mantidos.';
     }
     authMode = 'local';
+    authState = 'unauthenticated';
     authenticatedUser = null;
     data = loadData();
     if (cachedAccountData) {
