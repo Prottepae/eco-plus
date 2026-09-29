@@ -1,4 +1,4 @@
-const CACHE_NAME = 'eco-plus-shell-v4';
+const CACHE_NAME = 'eco-plus-shell-v5';
 const APP_SHELL = [
   './',
   'index.html',
