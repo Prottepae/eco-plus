@@ -28,6 +28,7 @@
     'subscriptionForm', 'subscriptionDialogTitle', 'subscriptionId', 'subscriptionName', 'subscriptionAmount', 'subscriptionStartMonth',
     'subscriptionEndDate', 'subscriptionError', 'deleteSubscriptionButton', 'syncNotice', 'syncModeLabel',
     'syncMessage', 'syncAction', 'profileSyncStatus', 'githubLoginButton', 'githubCreateButton', 'logoutButton',
+      'topbarLogoutButton',
     'syncDecisionDialog', 'syncDecisionCopy', 'useAccountDataButton', 'syncLocalDataButton', 'mergeDataButton', 'startFreshButton', 'restoreLocalBackupButton'
   ].map(id => [id, document.getElementById(id)]));
 
@@ -675,6 +676,7 @@
   elements.githubLoginButton.addEventListener('click', redirectToGitHub);
   elements.githubCreateButton.addEventListener('click', redirectToGitHub);
   elements.logoutButton.addEventListener('click', logout);
+  elements.topbarLogoutButton.addEventListener('click', logout);
   elements.restoreLocalBackupButton.addEventListener('click', restoreLocalBackup);
   elements.useAccountDataButton.addEventListener('click', () => enterSyncedMode(pendingRemoteData));
   elements.syncLocalDataButton.addEventListener('click', () => enterSyncedMode(data, true));
@@ -715,6 +717,7 @@
       elements.syncModeLabel.textContent = 'Modo local';
       elements.syncMessage.textContent = 'Os teus dados estão guardados neste dispositivo. Entra com GitHub para sincronizar entre dispositivos.';
     }
+    elements.topbarLogoutButton.hidden = authMode !== 'synced' && authMode !== 'pending';
     elements.syncAction.hidden = authMode === 'synced' && state !== 'error';
     elements.syncAction.textContent = authMode === 'synced' && state === 'error'
       ? 'Tentar sincronizar novamente'
@@ -777,6 +780,7 @@
     if (!preserveLocalBackup()) return;
     authMode = 'synced';
     data = normalizeAppData(cloneData(nextData));
+    elements.topbarLogoutButton.hidden = false;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
     try { localStorage.setItem(syncCacheKey(), JSON.stringify(data)); } catch {}
     localData = cloneData(data);
@@ -866,8 +870,6 @@
 
   async function logout() {
     await flushRemoteSave();
-    const wasSynced = authMode === 'synced';
-    const activeSyncCacheKey = syncCacheKey();
     try {
       const response = await apiFetch('/auth/logout', { credentials: 'include' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
