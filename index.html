@@ -75,6 +75,14 @@
 
         <div class="award-strip" id="awardStrip" aria-live="polite"></div>
 
+        <section class="subscription-section" aria-labelledby="subscriptionHeading">
+          <div class="section-heading">
+            <div><p class="eyebrow">Pagamentos recorrentes</p><h2 id="subscriptionHeading">Subscrições</h2></div>
+            <button class="text-action" id="addSubscriptionButton" type="button">+ Adicionar</button>
+          </div>
+          <div class="subscription-list" id="subscriptionList"></div>
+        </section>
+
         <div class="section-heading expense-heading">
           <div><p class="eyebrow">Movimentos</p><h2>Despesas</h2></div>
           <button class="text-action" id="newMonthButton" type="button">+ Novo mês</button>
@@ -99,7 +107,12 @@
         </div>
       </section>
     </main>
-    <footer class="privacy-note"><span class="privacy-lock" aria-hidden="true">●</span> Os teus dados ficam apenas neste dispositivo.</footer>
+    <section class="sync-notice" id="syncNotice" aria-live="polite">
+      <span class="sync-mode" id="syncModeLabel">Modo local</span>
+      <p id="syncMessage">Os teus dados estão guardados neste dispositivo. Entra com GitHub para sincronizar entre dispositivos.</p>
+      <button class="text-action" id="syncAction" type="button">Sincronizar os meus dados</button>
+    </section>
+    <footer class="privacy-note"><span class="privacy-lock" aria-hidden="true">●</span> Os teus dados ficam neste dispositivo; a sincronização é opcional.</footer>
   </div>
 
   <dialog class="sheet-dialog" id="expenseDialog" aria-labelledby="expenseDialogTitle">
@@ -155,7 +168,51 @@
       <input class="text-input" id="profileName" name="name" type="text" maxlength="30" placeholder="Ex.: João" required>
       <p class="form-error" id="profileError" role="alert" hidden></p>
       <button class="primary-button submit-button" type="submit">Guardar nome</button>
+      <div class="profile-sync-block">
+        <p class="field-label">Sincronização</p>
+        <p class="profile-sync-status" id="profileSyncStatus">Modo local: os dados ficam guardados neste dispositivo.</p>
+        <h3>Usa o Eco+ em qualquer dispositivo</h3>
+        <p class="profile-sync-description">Entra com GitHub para sincronizar as tuas receitas, despesas e subscrições entre dispositivos e manter uma cópia associada à tua conta.</p>
+        <button class="primary-button" id="githubLoginButton" type="button">Entrar com GitHub</button>
+        <button class="text-action account-create-button" id="githubCreateButton" type="button">Criar conta</button>
+        <p class="profile-sync-description">A conta Eco+ é criada através da autenticação GitHub. Não precisas de criar uma palavra-passe Eco+.</p>
+        <button class="delete-button" id="logoutButton" type="button" hidden>Terminar sessão</button>
+        <button class="secondary-button" id="restoreLocalBackupButton" type="button" hidden>Restaurar cópia local anterior</button>
+      </div>
     </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="subscriptionDialog" aria-labelledby="subscriptionDialogTitle">
+    <form class="sheet-form" id="subscriptionForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Pagamento recorrente</p><h2 id="subscriptionDialogTitle">Nova subscrição</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <input id="subscriptionId" type="hidden">
+      <label class="field-label" for="subscriptionName">Nome</label>
+      <input class="text-input" id="subscriptionName" name="name" type="text" maxlength="60" placeholder="Ex.: Música" required>
+      <label class="field-label" for="subscriptionAmount">Valor mensal</label>
+      <div class="amount-input-wrap"><input id="subscriptionAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0,00" required><span>€</span></div>
+      <label class="field-label" for="subscriptionStartMonth">Começa no mês</label>
+      <input class="text-input" id="subscriptionStartMonth" name="startMonth" type="month" required>
+      <label class="field-label" for="subscriptionEndDate">Subscrição válida até</label>
+      <input class="text-input" id="subscriptionEndDate" name="endDate" type="date" required>
+      <p class="form-error" id="subscriptionError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Guardar subscrição</button>
+      <button class="delete-button" id="deleteSubscriptionButton" type="button" hidden>Eliminar subscrição</button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="syncDecisionDialog" aria-labelledby="syncDecisionTitle">
+    <div class="sheet-form">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Dados da conta</p><h2 id="syncDecisionTitle">Escolhe os dados a usar</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <p class="sync-decision-copy" id="syncDecisionCopy"></p>
+      <div class="sync-decision-actions">
+        <button class="primary-button" id="useAccountDataButton" type="button">Usar dados da conta</button>
+        <button class="secondary-button" id="syncLocalDataButton" type="button">Sincronizar dados locais</button>
+        <button class="secondary-button" id="mergeDataButton" type="button">Combinar os dados</button>
+        <button class="text-action" id="startFreshButton" type="button">Começar do zero</button>
+      </div>
+    </div>
   </dialog>
 
   <script src="app.js" defer></script>

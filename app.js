@@ -3,7 +3,10 @@
 
   const STORAGE_KEY = 'eco-plus-v1';
   const LEGACY_STORAGE_KEY = 'meu-dinheiro-v1';
+  const SYNC_CACHE_PREFIX = 'eco-plus-sync-cache-v1-';
+  const LOCAL_BACKUP_PREFIX = 'eco-plus-local-backup-v1-';
   const THEME_KEY = 'eco-plus-theme';
+  const API_BASE = 'https://mybudget-api.alexandre-kkh.workers.dev';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -21,13 +24,24 @@
     'expenseMonthLabel', 'expenseError', 'deleteExpenseButton', 'monthDialog', 'monthForm',
     'monthDate', 'monthIncome', 'monthError', 'incomeDialog', 'incomeForm', 'incomeValue',
     'incomeMonthLabel', 'incomeError', 'themeToggle', 'userPill', 'userNameLabel', 'profileDialog',
-    'profileForm', 'profileName', 'profileError', 'expenseType'
+    'profileForm', 'profileName', 'profileError', 'expenseType', 'subscriptionList', 'subscriptionDialog',
+    'subscriptionForm', 'subscriptionDialogTitle', 'subscriptionId', 'subscriptionName', 'subscriptionAmount', 'subscriptionStartMonth',
+    'subscriptionEndDate', 'subscriptionError', 'deleteSubscriptionButton', 'syncNotice', 'syncModeLabel',
+    'syncMessage', 'syncAction', 'profileSyncStatus', 'githubLoginButton', 'githubCreateButton', 'logoutButton',
+    'syncDecisionDialog', 'syncDecisionCopy', 'useAccountDataButton', 'syncLocalDataButton', 'mergeDataButton', 'startFreshButton', 'restoreLocalBackupButton'
   ].map(id => [id, document.getElementById(id)]));
 
   let data = loadData();
+  let localData = cloneData(data);
   let selectedMonth = currentMonthKey();
   let activeView = 'monthView';
   let audioContext = null;
+  let authMode = 'checking';
+  let authenticatedUser = null;
+  let pendingRemoteData = null;
+  let syncError = '';
+  let syncTimer = null;
+  let syncQueue = Promise.resolve();
 
   function currentMonthKey() {
     const now = new Date();
@@ -37,25 +51,67 @@
   function loadData() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY) || '{"months":{},"profile":{"name":""}}';
-      const parsed = JSON.parse(stored);
-      if (!parsed || typeof parsed.months !== 'object' || Array.isArray(parsed.months)) return { months: {}, profile: { name: '' } };
-      if (!parsed.profile || typeof parsed.profile !== 'object') parsed.profile = { name: '' };
-      parsed.profile.name = typeof parsed.profile.name === 'string' ? parsed.profile.name : '';
-      for (const [key, month] of Object.entries(parsed.months)) {
-        if (!/^\d{4}-\d{2}$/.test(key) || !month || !Number.isFinite(Number(month.income))) {
-          delete parsed.months[key];
-          continue;
-        }
-        month.income = Math.max(0, Number(month.income));
-        month.expenses = Array.isArray(month.expenses) ? month.expenses.map(normalizeExpense).filter(Boolean) : [];
-      }
+      const parsed = normalizeAppData(JSON.parse(stored));
       if (localStorage.getItem(STORAGE_KEY) === null && localStorage.getItem(LEGACY_STORAGE_KEY) !== null) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       }
       return parsed;
     } catch {
-      return { months: {}, profile: { name: '' } };
+      return emptyData();
     }
+  }
+
+  function emptyData() {
+    return { months: {}, profile: { name: '' }, subscriptions: [] };
+  }
+
+  function cloneData(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function syncCacheKey() {
+    const accountId = authenticatedUser?.githubId || authenticatedUser?.login || 'account';
+    return `${SYNC_CACHE_PREFIX}${encodeURIComponent(accountId)}`;
+  }
+
+  function preserveLocalBackup() {
+    if (!hasRelevantData(localData)) return true;
+    const accountId = authenticatedUser?.githubId || authenticatedUser?.login || 'account';
+    const key = `${LOCAL_BACKUP_PREFIX}${encodeURIComponent(accountId)}`;
+    try {
+      if (localStorage.getItem(key) === null) {
+        localStorage.setItem(key, JSON.stringify({ savedAt: new Date().toISOString(), data: localData }));
+      }
+      return true;
+    } catch {
+      elements.syncDecisionCopy.textContent = 'Não foi possível criar uma cópia de segurança dos dados deste dispositivo. Liberta espaço no armazenamento antes de continuar; os dados atuais não foram alterados.';
+      return false;
+    }
+  }
+
+  function apiFetch(path, options = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    return fetch(`${API_BASE}${path}`, { ...options, signal: controller.signal })
+      .finally(() => window.clearTimeout(timeout));
+  }
+
+  function normalizeAppData(value) {
+    let parsed = value;
+    if (parsed && parsed.data && typeof parsed.data === 'object' && parsed.data.months) parsed = parsed.data;
+    if (!parsed || typeof parsed.months !== 'object' || Array.isArray(parsed.months)) return emptyData();
+    parsed.profile = parsed.profile && typeof parsed.profile === 'object' ? parsed.profile : { name: '' };
+    parsed.profile.name = typeof parsed.profile.name === 'string' ? parsed.profile.name : '';
+    parsed.subscriptions = Array.isArray(parsed.subscriptions) ? parsed.subscriptions.map(normalizeSubscription).filter(Boolean) : [];
+    for (const [key, month] of Object.entries(parsed.months)) {
+      if (!/^\d{4}-\d{2}$/.test(key) || !month || !Number.isFinite(Number(month.income))) {
+        delete parsed.months[key];
+        continue;
+      }
+      month.income = Math.max(0, Number(month.income));
+      month.expenses = Array.isArray(month.expenses) ? month.expenses.map(normalizeExpense).filter(Boolean) : [];
+    }
+    return parsed;
   }
 
   function normalizeExpense(expense) {
@@ -71,14 +127,60 @@
       typeof expense.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(expense.date);
   }
 
+  function normalizeSubscription(subscription) {
+    if (!subscription || typeof subscription !== 'object' || typeof subscription.id !== 'string' ||
+      typeof subscription.name !== 'string' || !Number.isFinite(Number(subscription.amount)) ||
+      Number(subscription.amount) <= 0 || !/^\d{4}-\d{2}$/.test(subscription.startMonth || '') ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(subscription.endDate || '')) return null;
+    return { ...subscription, amount: Number(subscription.amount) };
+  }
+
   function saveData() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      const serialized = JSON.stringify(data);
+      if (authMode === 'synced') {
+        let saved = false;
+        try { localStorage.setItem(STORAGE_KEY, serialized); saved = true; } catch {}
+        try { localStorage.setItem(syncCacheKey(), serialized); saved = true; } catch {}
+        if (!saved) throw new Error('Não foi possível guardar os dados localmente.');
+        localData = cloneData(data);
+        scheduleRemoteSave();
+      } else {
+        localStorage.setItem(STORAGE_KEY, serialized);
+        localData = cloneData(data);
+      }
       return true;
     } catch {
       window.alert('Não foi possível guardar os dados neste dispositivo. Verifica o espaço disponível no navegador.');
       return false;
     }
+  }
+
+  function scheduleRemoteSave() {
+    window.clearTimeout(syncTimer);
+    syncTimer = window.setTimeout(() => flushRemoteSave(), 450);
+  }
+
+  function flushRemoteSave() {
+    if (authMode !== 'synced') return syncQueue;
+    window.clearTimeout(syncTimer);
+    const snapshot = cloneData(data);
+    setSyncStatus('syncing');
+    syncQueue = syncQueue.catch(() => {}).then(async () => {
+      const response = await apiFetch('/api/data', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      syncError = '';
+      setSyncStatus('synced');
+    }).catch(() => {
+      syncError = 'Não foi possível sincronizar. Os teus dados continuam guardados neste dispositivo.';
+      setSyncStatus('error');
+    });
+    return syncQueue;
   }
 
   function formatMonth(key) {
@@ -91,10 +193,18 @@
     return currencyFormatter.format(Number.isFinite(value) ? value : 0);
   }
 
-  function monthTotals(month) {
+  function subscriptionTotal(monthKey) {
+    return data.subscriptions.reduce((sum, subscription) => {
+      const endMonth = subscription.endDate.slice(0, 7);
+      return subscription.startMonth <= monthKey && monthKey <= endMonth ? sum + subscription.amount : sum;
+    }, 0);
+  }
+
+  function monthTotals(month, monthKey = selectedMonth) {
     const spent = month.expenses.reduce((sum, expense) => sum + (expense.type === 'expense' ? Number(expense.amount) : 0), 0);
     const refunds = month.expenses.reduce((sum, expense) => sum + (expense.type === 'refund' ? Number(expense.amount) : 0), 0);
-    return { spent, refunds, balance: Number(month.income) - spent + refunds };
+    const subscriptions = subscriptionTotal(monthKey);
+    return { spent, refunds, subscriptions, balance: Number(month.income) - spent - subscriptions + refunds };
   }
 
   function getMonth() {
@@ -196,6 +306,7 @@
     renderMonth();
     renderHistory();
     renderMonthPicker();
+    renderSubscriptions();
   }
 
   function renderMonth() {
@@ -215,12 +326,13 @@
       return;
     }
 
-    const { spent, refunds, balance } = monthTotals(month);
-    const percentage = month.income > 0 ? spent / month.income * 100 : (spent > 0 ? 100 : 0);
+    const { spent, refunds, subscriptions, balance } = monthTotals(month);
+    const totalSpent = spent + subscriptions;
+    const percentage = month.income > 0 ? totalSpent / month.income * 100 : (totalSpent > 0 ? 100 : 0);
     const displayPercent = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 }).format(percentage);
     elements.balanceAmount.textContent = formatCurrency(balance);
     elements.incomeAmount.textContent = formatCurrency(month.income);
-    elements.spentAmount.textContent = formatCurrency(spent);
+    elements.spentAmount.textContent = formatCurrency(totalSpent);
     elements.spentPercent.textContent = `${displayPercent}%`;
     elements.progressFill.style.width = `${Math.min(100, Math.max(0, percentage))}%`;
     elements.progressTrack.setAttribute('aria-valuenow', String(Math.min(100, Math.max(0, percentage))));
@@ -229,6 +341,9 @@
     elements.awardStrip.innerHTML = getAwards(month).map(award => `<span class="award-pill award-pill--${balance < 0 ? 'warning' : 'success'}"><span>${award.icon}</span>${award.label}</span>`).join('');
     if (refunds > 0) {
       elements.awardStrip.innerHTML += `<span class="award-pill award-pill--muted"><span>↩️</span>Reembolsos ${formatCurrency(refunds)}</span>`;
+    }
+    if (subscriptions > 0) {
+      elements.awardStrip.innerHTML += `<span class="award-pill award-pill--muted"><span>📱</span>Subscrições ${formatCurrency(subscriptions)}</span>`;
     }
     pulseElement('.balance-amount');
     pulseElement('.summary-item strong');
@@ -260,11 +375,30 @@
     elements.historyList.hidden = keys.length === 0;
     elements.historyList.innerHTML = keys.map((key, index) => {
       const month = data.months[key];
-      const { spent, refunds, balance } = monthTotals(month);
+      const { spent, refunds, subscriptions, balance } = monthTotals(month, key);
+      const totalSpent = spent + subscriptions;
       return `<button class="history-row" type="button" data-month-key="${key}" style="animation-delay:${Math.min(index, 7) * 40}ms">
         <span class="history-month">${escapeHTML(formatMonth(key))}</span>
         <span class="history-balance${balance < 0 ? ' is-negative' : ''}">${formatCurrency(balance)}</span>
-        <span class="history-stats"><span>Recebido: <strong>${formatCurrency(month.income)}</strong></span><span>Gasto: <strong>${formatCurrency(spent)}</strong></span><span>Reemb.: <strong>${formatCurrency(refunds)}</strong></span><span>Restante: <strong>${formatCurrency(balance)}</strong></span></span>
+        <span class="history-stats"><span>Recebido: <strong>${formatCurrency(month.income)}</strong></span><span>Gasto: <strong>${formatCurrency(totalSpent)}</strong></span><span>Subscrições: <strong>${formatCurrency(subscriptions)}</strong></span><span>Reemb.: <strong>${formatCurrency(refunds)}</strong></span><span>Restante: <strong>${formatCurrency(balance)}</strong></span></span>
+      </button>`;
+    }).join('');
+  }
+
+  function renderSubscriptions() {
+    const subscriptions = [...data.subscriptions].sort((a, b) => a.name.localeCompare(b.name, 'pt-PT'));
+    if (!subscriptions.length) {
+      elements.subscriptionList.innerHTML = '<p class="subscription-empty">Ainda não adicionaste subscrições mensais.</p>';
+      return;
+    }
+    elements.subscriptionList.innerHTML = subscriptions.map(subscription => {
+      const endDate = new Date(`${subscription.endDate}T12:00:00`);
+      const endMonth = subscription.endDate.slice(0, 7);
+      const status = selectedMonth < subscription.startMonth ? 'Começa mais tarde' : selectedMonth > endMonth ? 'Terminada' : `Até ${dateFormatter.format(endDate)}`;
+      return `<button class="subscription-row" type="button" data-subscription-id="${escapeHTML(subscription.id)}">
+        <span class="subscription-icon" aria-hidden="true">↻</span>
+        <span class="expense-main"><span class="expense-name">${escapeHTML(subscription.name)}</span><span class="expense-meta">${escapeHTML(status)} · mensal</span></span>
+        <span class="subscription-value">${formatCurrency(subscription.amount)}<small>/mês</small></span>
       </button>`;
     }).join('');
   }
@@ -316,6 +450,20 @@
     requestAnimationFrame(() => elements.expenseAmount.focus({ preventScroll: true }));
   }
 
+  function openSubscriptionDialog(subscription = null) {
+    elements.subscriptionForm.reset();
+    elements.subscriptionError.hidden = true;
+    elements.subscriptionId.value = subscription?.id || '';
+    elements.subscriptionName.value = subscription?.name || '';
+    elements.subscriptionAmount.value = subscription ? Number(subscription.amount).toFixed(2) : '';
+    elements.subscriptionStartMonth.value = subscription?.startMonth || selectedMonth;
+    elements.subscriptionEndDate.value = subscription?.endDate || dateFromKey(selectedMonth);
+    elements.subscriptionDialogTitle.textContent = subscription ? 'Editar subscrição' : 'Nova subscrição';
+    elements.subscriptionForm.querySelector('.submit-button').textContent = subscription ? 'Guardar alterações' : 'Guardar subscrição';
+    elements.deleteSubscriptionButton.hidden = !subscription;
+    elements.subscriptionDialog.showModal();
+  }
+
   function createId() {
     return globalThis.crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
@@ -325,6 +473,7 @@
   document.getElementById('historyNewMonthButton').addEventListener('click', openMonthDialog);
   document.getElementById('firstMonthButton').addEventListener('click', openMonthDialog);
   document.getElementById('addExpenseButton').addEventListener('click', () => openExpenseDialog());
+  document.getElementById('addSubscriptionButton').addEventListener('click', () => openSubscriptionDialog());
   document.getElementById('editIncomeButton').addEventListener('click', () => {
     const month = getMonth();
     if (!month) return;
@@ -337,6 +486,47 @@
   elements.monthPicker.addEventListener('change', event => {
     selectedMonth = event.target.value;
     render();
+  });
+
+  elements.subscriptionList.addEventListener('click', event => {
+    const row = event.target.closest('[data-subscription-id]');
+    if (!row) return;
+    const subscription = data.subscriptions.find(item => item.id === row.dataset.subscriptionId);
+    if (subscription) openSubscriptionDialog(subscription);
+  });
+
+  elements.subscriptionForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const name = elements.subscriptionName.value.trim();
+    const amount = Number(elements.subscriptionAmount.value);
+    const startMonth = elements.subscriptionStartMonth.value;
+    const endDate = elements.subscriptionEndDate.value;
+    if (!name || !Number.isFinite(amount) || amount <= 0 || !/^\d{4}-(0[1-9]|1[0-2])$/.test(startMonth) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startMonth > endDate.slice(0, 7)) {
+      elements.subscriptionError.textContent = 'Confirma o nome, o valor e um prazo final igual ou posterior ao início.';
+      elements.subscriptionError.hidden = false;
+      triggerFeedback('warning');
+      return;
+    }
+    const subscription = { id: elements.subscriptionId.value || createId(), name, amount: Math.round(amount * 100) / 100, startMonth, endDate };
+    const index = data.subscriptions.findIndex(item => item.id === subscription.id);
+    if (index >= 0) data.subscriptions[index] = subscription;
+    else data.subscriptions.push(subscription);
+    saveData();
+    elements.subscriptionDialog.close();
+    render();
+    triggerFeedback('success');
+  });
+
+  elements.deleteSubscriptionButton.addEventListener('click', () => {
+    const subscriptionId = elements.subscriptionId.value;
+    const subscription = data.subscriptions.find(item => item.id === subscriptionId);
+    if (!subscription || !window.confirm(`Eliminar a subscrição "${subscription.name}"? Esta ação não pode ser anulada.`)) return;
+    data.subscriptions = data.subscriptions.filter(item => item.id !== subscriptionId);
+    saveData();
+    elements.subscriptionDialog.close();
+    render();
+    triggerFeedback('delete');
   });
 
   elements.expenseList.addEventListener('click', event => {
@@ -435,6 +625,22 @@
   document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   }));
+  elements.syncDecisionDialog.addEventListener('close', () => {
+    if (authMode !== 'pending') return;
+    authMode = 'local';
+    authenticatedUser = null;
+    data = loadData();
+    const syncSnapshot = wasSynced ? localStorage.getItem(activeSyncCacheKey) : null;
+    if (syncSnapshot) {
+      try {
+        data = normalizeAppData(JSON.parse(syncSnapshot));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch {}
+    }
+    localData = cloneData(data);
+    render();
+    setSyncStatus('local');
+  });
 
   elements.userPill.addEventListener('click', () => {
     elements.profileName.value = data.profile.name || '';
@@ -457,10 +663,225 @@
     triggerFeedback('success');
   });
 
+  elements.syncAction.addEventListener('click', () => {
+    if (authMode === 'synced') {
+      flushRemoteSave();
+      return;
+    }
+    elements.profileName.value = data.profile?.name || '';
+    elements.profileError.hidden = true;
+    elements.profileDialog.showModal();
+  });
+  elements.githubLoginButton.addEventListener('click', redirectToGitHub);
+  elements.githubCreateButton.addEventListener('click', redirectToGitHub);
+  elements.logoutButton.addEventListener('click', logout);
+  elements.restoreLocalBackupButton.addEventListener('click', restoreLocalBackup);
+  elements.useAccountDataButton.addEventListener('click', () => enterSyncedMode(pendingRemoteData));
+  elements.syncLocalDataButton.addEventListener('click', () => enterSyncedMode(data, true));
+  elements.mergeDataButton.addEventListener('click', () => enterSyncedMode(mergeAppData(data, pendingRemoteData), true));
+  elements.startFreshButton.addEventListener('click', () => enterSyncedMode(emptyData(), true));
+
   function renderUserName() {
-    const name = (data.profile && data.profile.name ? data.profile.name : 'Tu').trim();
+    const name = authMode === 'synced' && authenticatedUser?.login
+      ? authenticatedUser.login
+      : (data.profile && data.profile.name ? data.profile.name : 'Tu').trim();
     elements.userNameLabel.textContent = name;
     elements.userPill.setAttribute('aria-label', `Editar nome: ${name}`);
+  }
+
+  function hasRelevantData(value) {
+    return Object.keys(value.months || {}).length > 0 || (value.subscriptions || []).length > 0 || Boolean(value.profile?.name?.trim());
+  }
+
+  function setSyncStatus(state) {
+    elements.syncNotice.classList.toggle('is-error', state === 'error');
+    elements.syncNotice.classList.toggle('is-loading', state === 'checking' || state === 'syncing');
+    if (state === 'checking') {
+      elements.syncModeLabel.textContent = 'A verificar sessão';
+      elements.syncMessage.textContent = 'A aplicação continua disponível em modo local.';
+    } else if (state === 'syncing') {
+      elements.syncModeLabel.textContent = 'A sincronizar';
+      elements.syncMessage.textContent = 'A guardar as alterações na tua conta. Os dados também ficam neste dispositivo.';
+    } else if (authMode === 'synced' && state !== 'error') {
+      elements.syncModeLabel.textContent = 'Modo sincronizado';
+      elements.syncMessage.textContent = `Os teus dados estão sincronizados${authenticatedUser?.login ? ` como ${authenticatedUser.login}` : ''}.`;
+    } else if (state === 'error') {
+      elements.syncModeLabel.textContent = authMode === 'synced' ? 'Sincronização temporariamente indisponível' : 'Modo local';
+      elements.syncMessage.textContent = syncError || 'Não foi possível ligar ao serviço. Os teus dados continuam guardados neste dispositivo.';
+    } else if (authMode === 'pending') {
+      elements.syncModeLabel.textContent = 'Escolhe os dados a sincronizar';
+      elements.syncMessage.textContent = 'A tua conta está ligada. Os dados locais continuam preservados até escolheres como avançar.';
+    } else {
+      elements.syncModeLabel.textContent = 'Modo local';
+      elements.syncMessage.textContent = 'Os teus dados estão guardados neste dispositivo. Entra com GitHub para sincronizar entre dispositivos.';
+    }
+    elements.syncAction.hidden = authMode === 'synced' && state !== 'error';
+    elements.syncAction.textContent = authMode === 'synced' && state === 'error'
+      ? 'Tentar sincronizar novamente'
+      : state === 'checking' ? 'Ver opções de sincronização' : 'Sincronizar os meus dados';
+    elements.profileSyncStatus.textContent = authMode === 'synced'
+      ? `Modo sincronizado${authenticatedUser?.login ? ` com GitHub como ${authenticatedUser.login}` : ''}.`
+      : authMode === 'pending'
+        ? 'Sessão iniciada. Escolhe como combinar os dados antes de sincronizar.'
+        : state === 'error'
+          ? 'Não foi possível verificar a sessão. Podes continuar em modo local.'
+          : 'Modo local: os dados ficam guardados neste dispositivo.';
+    elements.githubLoginButton.hidden = authMode === 'synced';
+    elements.githubCreateButton.hidden = authMode === 'synced';
+    elements.logoutButton.hidden = authMode !== 'synced' && authMode !== 'pending';
+    elements.restoreLocalBackupButton.hidden = authMode === 'synced' || !getLocalBackupKeys().length;
+    renderUserName();
+  }
+
+  function getLocalBackupKeys() {
+    return Object.keys(localStorage).filter(key => key.startsWith(LOCAL_BACKUP_PREFIX));
+  }
+
+  function restoreLocalBackup() {
+    const backups = getLocalBackupKeys().map(key => {
+      try {
+        const value = JSON.parse(localStorage.getItem(key));
+        return { value, savedAt: value.savedAt || '' };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
+    const backup = backups.at(-1);
+    if (!backup || !window.confirm('Substituir os dados locais atuais pela cópia anterior à sincronização? Os dados da conta sincronizada continuam guardados na conta.')) return;
+    authMode = 'local';
+    authenticatedUser = null;
+    data = normalizeAppData(backup.value);
+    saveData();
+    elements.profileDialog.close();
+    render();
+    setSyncStatus('local');
+  }
+
+  function mergeAppData(local, remote) {
+    const merged = cloneData(remote);
+    for (const [key, localMonth] of Object.entries(local.months)) {
+      if (!merged.months[key]) {
+        merged.months[key] = cloneData(localMonth);
+        continue;
+      }
+      const knownIds = new Set(merged.months[key].expenses.map(expense => expense.id));
+      merged.months[key].expenses.push(...localMonth.expenses.filter(expense => !knownIds.has(expense.id)));
+    }
+    const subscriptionIds = new Set(merged.subscriptions.map(subscription => subscription.id));
+    merged.subscriptions.push(...local.subscriptions.filter(subscription => !subscriptionIds.has(subscription.id)));
+    if (local.profile?.name) merged.profile.name = local.profile.name;
+    return merged;
+  }
+
+  function enterSyncedMode(nextData, shouldUpload = false) {
+    if (!preserveLocalBackup()) return;
+    authMode = 'synced';
+    data = normalizeAppData(cloneData(nextData));
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+    try { localStorage.setItem(syncCacheKey(), JSON.stringify(data)); } catch {}
+    localData = cloneData(data);
+    elements.syncDecisionDialog.close();
+    render();
+    setSyncStatus('synced');
+    if (shouldUpload) flushRemoteSave();
+  }
+
+  function openSyncDecision(local, remote) {
+    authMode = 'pending';
+    data = local;
+    pendingRemoteData = remote;
+    const localHasData = hasRelevantData(local);
+    const remoteHasData = hasRelevantData(remote);
+    elements.syncDecisionCopy.textContent = remoteHasData
+      ? 'Existem dados neste dispositivo e na conta. Podes escolher uma origem ou combinar os dados: em meses coincidentes, o rendimento da conta mantém-se e os movimentos locais ainda não existentes são adicionados. Nada local será apagado.'
+      : 'Encontrámos dados neste dispositivo e a conta ainda não tem dados. Podes sincronizar os dados atuais ou começar com a conta vazia.';
+    elements.useAccountDataButton.hidden = !remoteHasData;
+    elements.syncLocalDataButton.hidden = !localHasData;
+    elements.mergeDataButton.hidden = !localHasData || !remoteHasData;
+    elements.startFreshButton.hidden = remoteHasData;
+    render();
+    setSyncStatus('pending');
+    elements.syncDecisionDialog.showModal();
+  }
+
+  async function verifySession() {
+    try {
+      const response = await apiFetch('/api/me', { credentials: 'include' });
+      if (response.status === 401) {
+        authMode = 'local';
+        data = loadData();
+        localData = cloneData(data);
+        render();
+        setSyncStatus('local');
+        return;
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const session = await response.json();
+      if (!session.authenticated) {
+        authMode = 'local';
+        data = loadData();
+        localData = cloneData(data);
+        render();
+        setSyncStatus('local');
+        return;
+      }
+
+      authenticatedUser = session.user || null;
+      localData = loadData();
+      let remoteData;
+      try {
+        const dataResponse = await apiFetch('/api/data', { credentials: 'include' });
+        if (!dataResponse.ok) throw new Error(`HTTP ${dataResponse.status}`);
+        remoteData = normalizeAppData(await dataResponse.json());
+        syncError = '';
+      } catch {
+        const cachedData = localStorage.getItem(syncCacheKey());
+        if (!cachedData) throw new Error('Não foi possível carregar os dados da conta.');
+        remoteData = normalizeAppData(JSON.parse(cachedData));
+        syncError = 'Não foi possível sincronizar. Os teus dados continuam guardados neste dispositivo.';
+      }
+
+      localData = loadData();
+      if (hasRelevantData(localData) && hasRelevantData(remoteData)) {
+        openSyncDecision(localData, remoteData);
+      } else if (hasRelevantData(localData)) {
+        openSyncDecision(localData, remoteData);
+      } else {
+        enterSyncedMode(remoteData);
+      }
+    } catch {
+      authenticatedUser = null;
+      authMode = 'local';
+      data = loadData();
+      localData = cloneData(data);
+      syncError = 'Não foi possível verificar a sessão. Os teus dados continuam guardados neste dispositivo.';
+      render();
+      setSyncStatus('error');
+    }
+  }
+
+  function redirectToGitHub() {
+    window.location.assign(`${API_BASE}/auth`);
+  }
+
+  async function logout() {
+    await flushRemoteSave();
+    const wasSynced = authMode === 'synced';
+    const activeSyncCacheKey = syncCacheKey();
+    try {
+      const response = await apiFetch('/auth/logout', { credentials: 'include' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch {
+      syncError = 'Não foi possível confirmar o fim da sessão com o serviço. Os teus dados locais foram mantidos.';
+    }
+    authMode = 'local';
+    authenticatedUser = null;
+    data = loadData();
+    localData = cloneData(data);
+    elements.profileDialog.close();
+    elements.syncDecisionDialog.close();
+    render();
+    setSyncStatus(syncError ? 'error' : 'local');
   }
 
   elements.themeToggle.addEventListener('click', () => {
@@ -479,6 +900,8 @@
   elements.expenseCategory.innerHTML = CATEGORIES.map(([category, emoji]) => `<option value="${escapeHTML(category)}">${emoji} ${escapeHTML(category)}</option>`).join('');
   renderUserName();
   render();
+  setSyncStatus('checking');
+  verifySession();
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     const updateReloadKey = 'eco-plus-sw-update-reload';
     try { sessionStorage.removeItem(updateReloadKey); } catch {}
