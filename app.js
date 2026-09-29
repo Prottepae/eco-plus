@@ -7,6 +7,7 @@
   const LOCAL_BACKUP_PREFIX = 'eco-plus-local-backup-v1-';
   const THEME_KEY = 'eco-plus-theme';
   const API_BASE = 'https://mybudget-api.alexandre-kkh.workers.dev';
+  const APP_VERSION = '1.1.0';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -43,6 +44,7 @@
   let syncError = '';
   let syncTimer = null;
   let syncQueue = Promise.resolve();
+  let sessionCheckInFlight = false;
 
   function currentMonthKey() {
     const now = new Date();
@@ -631,13 +633,6 @@
     authMode = 'local';
     authenticatedUser = null;
     data = loadData();
-    const syncSnapshot = wasSynced ? localStorage.getItem(activeSyncCacheKey) : null;
-    if (syncSnapshot) {
-      try {
-        data = normalizeAppData(JSON.parse(syncSnapshot));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      } catch {}
-    }
     localData = cloneData(data);
     render();
     setSyncStatus('local');
@@ -809,6 +804,8 @@
   }
 
   async function verifySession() {
+    if (sessionCheckInFlight || authMode === 'pending') return;
+    sessionCheckInFlight = true;
     try {
       const response = await apiFetch('/api/me', { credentials: 'include' });
       if (response.status === 401) {
@@ -846,6 +843,11 @@
       }
 
       localData = loadData();
+      const accountHasBeenLinked = localStorage.getItem(syncCacheKey()) !== null;
+      if (accountHasBeenLinked) {
+        enterSyncedMode(remoteData);
+        return;
+      }
       if (hasRelevantData(localData) && hasRelevantData(remoteData)) {
         openSyncDecision(localData, remoteData);
       } else if (hasRelevantData(localData)) {
@@ -853,14 +855,18 @@
       } else {
         enterSyncedMode(remoteData);
       }
-    } catch {
+    } catch (error) {
       authenticatedUser = null;
       authMode = 'local';
       data = loadData();
       localData = cloneData(data);
-      syncError = 'Não foi possível verificar a sessão. Os teus dados continuam guardados neste dispositivo.';
+      syncError = error?.name === 'AbortError'
+        ? 'A verificação da sessão demorou demasiado. Podes continuar em modo local e tentar novamente.'
+        : 'Não foi possível verificar a sessão. Os teus dados continuam guardados neste dispositivo.';
       render();
       setSyncStatus('error');
+    } finally {
+      sessionCheckInFlight = false;
     }
   }
 
@@ -870,6 +876,7 @@
 
   async function logout() {
     await flushRemoteSave();
+    const cachedAccountData = authMode === 'synced' ? localStorage.getItem(syncCacheKey()) : null;
     try {
       const response = await apiFetch('/auth/logout', { credentials: 'include' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -879,6 +886,12 @@
     authMode = 'local';
     authenticatedUser = null;
     data = loadData();
+    if (cachedAccountData) {
+      try {
+        data = normalizeAppData(JSON.parse(cachedAccountData));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch {}
+    }
     localData = cloneData(data);
     elements.profileDialog.close();
     elements.syncDecisionDialog.close();
@@ -900,10 +913,17 @@
     elements.themeToggle.setAttribute('aria-label', 'Ativar modo claro');
   }
   elements.expenseCategory.innerHTML = CATEGORIES.map(([category, emoji]) => `<option value="${escapeHTML(category)}">${emoji} ${escapeHTML(category)}</option>`).join('');
+  document.getElementById('appVersion').textContent = `Eco+ v${APP_VERSION}`;
   renderUserName();
   render();
   setSyncStatus('checking');
   verifySession();
+  window.addEventListener('pageshow', () => {
+    if (authMode === 'local' || authMode === 'checking' || authMode === 'error') verifySession();
+  });
+  window.addEventListener('focus', () => {
+    if (authMode === 'local' || authMode === 'error') verifySession();
+  });
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     const updateReloadKey = 'eco-plus-sw-update-reload';
     try { sessionStorage.removeItem(updateReloadKey); } catch {}
