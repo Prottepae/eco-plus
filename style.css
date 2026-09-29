@@ -46,8 +46,6 @@ button { color: inherit; }
 .user-pill { display: inline-flex; align-items: center; gap: 6px; max-width: min(42vw, 190px); min-height: 38px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); cursor: pointer; }
 .user-pill__label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .user-pill strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.topbar-logout { min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface); font-size: 11px; font-weight: 700; cursor: pointer; }
-.topbar-logout:hover { color: var(--ink); border-color: var(--green); }
 .icon-button { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); cursor: pointer; transition: transform .18s ease, background .2s ease; }
 .icon-button:active, button:active { transform: scale(.97); }
 .icon-button svg { width: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -121,12 +119,9 @@ h2 { font-size: 21px; line-height: 1.25; font-weight: 800; }
 .floating-add { position: fixed; z-index: 5; right: max(22px, calc((100vw - 560px) / 2)); bottom: calc(23px + env(safe-area-inset-bottom)); width: 58px; height: 58px; display: grid; place-items: center; border: 0; border-radius: 20px; color: #fff; background: var(--green); box-shadow: 0 9px 24px rgba(22, 72, 52, .25); cursor: pointer; transition: transform .2s ease, background .2s ease; }
 .floating-add:hover { background: var(--green-dark); transform: translateY(-2px); }
 .floating-add svg { width: 25px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.sync-notice { margin-top: 26px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
-.sync-mode { display: inline-flex; margin-bottom: 6px; color: var(--green); font-size: 11px; font-weight: 800; }
-.sync-notice p, .profile-sync-description, .profile-sync-status, .sync-decision-copy { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.sync-notice .text-action { padding-left: 0; }
-.sync-notice.is-error .sync-mode { color: var(--danger); }
-.sync-notice.is-loading .sync-mode { color: var(--coral); }
+.local-data-notice { margin-top: 26px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+.local-data-label { display: inline-flex; margin-bottom: 6px; color: var(--green); font-size: 11px; font-weight: 800; }
+.local-data-notice p, .profile-backup-description { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .privacy-note { display: flex; justify-content: center; align-items: center; gap: 7px; margin-top: 13px; color: var(--muted); font-size: 10px; text-align: center; }
 .app-version { padding-left: 5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .privacy-lock { color: #55a879; font-size: 9px; }
@@ -162,15 +157,11 @@ h2 { font-size: 21px; line-height: 1.25; font-weight: 800; }
 .primary-button:hover { background: var(--green-dark); }
 .delete-button { width: 100%; min-height: 46px; margin-top: 8px; border: 0; border-radius: 13px; color: var(--danger); background: transparent; font-size: 13px; font-weight: 700; cursor: pointer; }
 .form-error { margin: 10px 0 0; color: var(--danger); font-size: 12px; line-height: 1.4; }
-.profile-sync-block { display: grid; gap: 10px; margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
-.profile-sync-block .field-label { margin: 0; }
-.profile-sync-block h3 { margin: 0; font-family: Manrope, sans-serif; font-size: 16px; line-height: 1.3; }
-.profile-sync-block .primary-button { margin-top: 3px; }
-.account-create-button { justify-self: center; }
+.profile-backup-block { display: grid; gap: 10px; margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
+.profile-backup-block .field-label { margin: 0; }
+.backup-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 4px; }
 .delete-button[hidden] { display: none; }
 .secondary-button { width: 100%; min-height: 48px; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: var(--surface-soft); font-size: 13px; font-weight: 700; cursor: pointer; }
-.sync-decision-actions { display: grid; gap: 9px; margin-top: 19px; }
-.sync-decision-actions .text-action { justify-self: center; }
 .compact-dialog { width: min(100%, 480px); border-radius: 25px 25px 0 0; }
 [hidden] { display: none !important; }
 

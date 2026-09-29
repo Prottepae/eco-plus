@@ -3,11 +3,8 @@
 
   const STORAGE_KEY = 'eco-plus-v1';
   const LEGACY_STORAGE_KEY = 'meu-dinheiro-v1';
-  const SYNC_CACHE_PREFIX = 'eco-plus-sync-cache-v1-';
-  const LOCAL_BACKUP_PREFIX = 'eco-plus-local-backup-v1-';
   const THEME_KEY = 'eco-plus-theme';
-  const API_BASE = 'https://mybudget-api.alexandre-kkh.workers.dev';
-  const APP_VERSION = '1.1.2';
+  const APP_VERSION = '1.2.1';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -27,29 +24,14 @@
     'incomeMonthLabel', 'incomeError', 'themeToggle', 'userPill', 'userNameLabel', 'profileDialog',
     'profileForm', 'profileName', 'profileError', 'expenseType', 'subscriptionList', 'subscriptionDialog',
     'subscriptionForm', 'subscriptionDialogTitle', 'subscriptionId', 'subscriptionName', 'subscriptionAmount', 'subscriptionStartMonth',
-    'subscriptionEndDate', 'subscriptionError', 'deleteSubscriptionButton', 'syncNotice', 'syncModeLabel',
-    'syncMessage', 'syncAction', 'profileSyncStatus', 'githubLoginButton', 'githubCreateButton', 'logoutButton',
-      'topbarLogoutButton',
-    'syncDecisionDialog', 'syncDecisionCopy', 'useAccountDataButton', 'syncLocalDataButton', 'mergeDataButton', 'startFreshButton', 'restoreLocalBackupButton'
+    'subscriptionEndDate', 'subscriptionError', 'deleteSubscriptionButton', 'exportDataButton', 'importDataButton',
+    'importDataFile', 'backupError'
   ].map(id => [id, document.getElementById(id)]));
 
   let data = loadData();
-  let localData = cloneData(data);
   let selectedMonth = currentMonthKey();
   let activeView = 'monthView';
   let audioContext = null;
-  let authMode = 'checking';
-  let authState = 'checking';
-  let authenticatedUser = null;
-  let pendingRemoteData = null;
-  let pendingLocalData = null;
-  let needsMigrationChoice = false;
-  let syncError = '';
-  let syncStatusState = 'checking';
-  let syncTimer = null;
-  let syncQueue = Promise.resolve();
-  let sessionCheckInFlight = false;
-  let dataLoadInFlight = false;
 
   function currentMonthKey() {
     const now = new Date();
@@ -75,33 +57,6 @@
 
   function cloneData(value) {
     return JSON.parse(JSON.stringify(value));
-  }
-
-  function syncCacheKey() {
-    const accountId = authenticatedUser?.githubId || authenticatedUser?.login || 'account';
-    return `${SYNC_CACHE_PREFIX}${encodeURIComponent(accountId)}`;
-  }
-
-  function preserveLocalBackup() {
-    if (!hasRelevantData(localData)) return true;
-    const accountId = authenticatedUser?.githubId || authenticatedUser?.login || 'account';
-    const key = `${LOCAL_BACKUP_PREFIX}${encodeURIComponent(accountId)}`;
-    try {
-      if (localStorage.getItem(key) === null) {
-        localStorage.setItem(key, JSON.stringify({ savedAt: new Date().toISOString(), data: localData }));
-      }
-      return true;
-    } catch {
-      elements.syncDecisionCopy.textContent = 'Não foi possível criar uma cópia de segurança dos dados deste dispositivo. Liberta espaço no armazenamento antes de continuar; os dados atuais não foram alterados.';
-      return false;
-    }
-  }
-
-  function apiFetch(path, options = {}) {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 10000);
-    return fetch(`${API_BASE}${path}`, { credentials: 'include', ...options, signal: controller.signal })
-      .finally(() => window.clearTimeout(timeout));
   }
 
   function normalizeAppData(value) {
@@ -145,51 +100,12 @@
 
   function saveData() {
     try {
-      const serialized = JSON.stringify(data);
-      if (authMode === 'synced') {
-        let saved = false;
-        try { localStorage.setItem(STORAGE_KEY, serialized); saved = true; } catch {}
-        try { localStorage.setItem(syncCacheKey(), serialized); saved = true; } catch {}
-        if (!saved) throw new Error('Não foi possível guardar os dados localmente.');
-        localData = cloneData(data);
-        scheduleRemoteSave();
-      } else {
-        localStorage.setItem(STORAGE_KEY, serialized);
-        localData = cloneData(data);
-      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       return true;
     } catch {
       window.alert('Não foi possível guardar os dados neste dispositivo. Verifica o espaço disponível no navegador.');
       return false;
     }
-  }
-
-  function scheduleRemoteSave() {
-    window.clearTimeout(syncTimer);
-    syncTimer = window.setTimeout(() => flushRemoteSave(), 450);
-  }
-
-  function flushRemoteSave() {
-    if (authState !== 'authenticated') return syncQueue;
-    window.clearTimeout(syncTimer);
-    const snapshot = cloneData(data);
-    setSyncStatus('syncing');
-    syncQueue = syncQueue.catch(() => {}).then(async () => {
-      console.info('[DATA] Saving server data');
-      const response = await apiFetch('/api/data', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(snapshot)
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      syncError = '';
-      setSyncStatus('synced');
-    }).catch(() => {
-      syncError = 'Não foi possível sincronizar. Os teus dados continuam guardados neste dispositivo.';
-      setSyncStatus('error');
-    });
-    return syncQueue;
   }
 
   function formatMonth(key) {
@@ -634,15 +550,6 @@
   document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   }));
-  elements.syncDecisionDialog.addEventListener('close', () => {
-    if (authMode !== 'pending') return;
-    authMode = 'synced';
-    data = cloneData(pendingRemoteData || data);
-    persistSyncedData();
-    render();
-    setSyncStatus('authenticated');
-  });
-
   elements.userPill.addEventListener('click', () => {
     elements.profileName.value = data.profile.name || '';
     elements.profileError.hidden = true;
@@ -664,321 +571,80 @@
     triggerFeedback('success');
   });
 
-  elements.syncAction.addEventListener('click', () => {
-    if (authState === 'checking') {
-      if (syncStatusState === 'connection-error') verifySession();
-      return;
-    }
-    if (authState === 'authenticated') {
-      if (needsMigrationChoice && pendingLocalData && pendingRemoteData) {
-        openSyncDecision(pendingLocalData, pendingRemoteData);
-        return;
-      }
-      if (authMode === 'synced') flushRemoteSave();
-      else loadAuthenticatedData();
-      return;
-    }
-    if (authMode === 'synced') {
-      flushRemoteSave();
-      return;
-    }
-    elements.profileName.value = data.profile?.name || '';
-    elements.profileError.hidden = true;
-    elements.profileDialog.showModal();
-  });
-  elements.githubLoginButton.addEventListener('click', redirectToGitHub);
-  elements.githubCreateButton.addEventListener('click', redirectToGitHub);
-  elements.logoutButton.addEventListener('click', logout);
-  elements.topbarLogoutButton.addEventListener('click', logout);
-  elements.restoreLocalBackupButton.addEventListener('click', restoreLocalBackup);
-  elements.useAccountDataButton.addEventListener('click', () => enterSyncedMode(pendingRemoteData));
-  elements.syncLocalDataButton.addEventListener('click', () => enterSyncedMode(pendingLocalData, true));
-  elements.mergeDataButton.addEventListener('click', () => enterSyncedMode(mergeAppData(pendingLocalData, pendingRemoteData), true));
-  elements.startFreshButton.addEventListener('click', () => enterSyncedMode(emptyData(), true));
-
   function renderUserName() {
-    const name = authState === 'authenticated' && authenticatedUser?.login
-      ? authenticatedUser.login
-      : (data.profile && data.profile.name ? data.profile.name : 'Tu').trim();
+    const name = (data.profile && data.profile.name ? data.profile.name : 'Tu').trim();
     elements.userNameLabel.textContent = name;
     elements.userPill.setAttribute('aria-label', `Editar nome: ${name}`);
   }
 
-  function hasRelevantData(value) {
-    return Object.keys(value.months || {}).length > 0 || (value.subscriptions || []).length > 0 || Boolean(value.profile?.name?.trim());
+  function makeBackupDocument() {
+    return {
+      format: 'eco-plus-backup',
+      formatVersion: 1,
+      appVersion: APP_VERSION,
+      exportedAt: new Date().toISOString(),
+      settings: { theme: localStorage.getItem(THEME_KEY) || 'system', selectedMonth },
+      data: cloneData(data)
+    };
   }
 
-  function setSyncStatus(state) {
-    syncStatusState = state;
-    elements.syncNotice.classList.toggle('is-error', state === 'error');
-    elements.syncNotice.classList.toggle('is-loading', state === 'checking' || state === 'syncing');
-    if (state === 'checking') {
-      authState = 'checking';
-      elements.syncModeLabel.textContent = 'A verificar sessão';
-      elements.syncMessage.textContent = 'A aplicação continua disponível em modo local.';
-    } else if (state === 'connection-error') {
-      elements.syncModeLabel.textContent = 'Sem ligação ao serviço';
-      elements.syncMessage.textContent = 'Não foi possível verificar a sessão. Os teus dados locais estão preservados; tenta novamente.';
-    } else if (state === 'loading-data') {
-      elements.syncModeLabel.textContent = 'Sessão confirmada';
-      elements.syncMessage.textContent = 'A carregar os teus dados sincronizados…';
-    } else if (state === 'syncing') {
-      elements.syncModeLabel.textContent = 'A sincronizar';
-      elements.syncMessage.textContent = 'A guardar as alterações na tua conta. Os dados também ficam neste dispositivo.';
-    } else if ((authMode === 'synced' || state === 'authenticated') && state !== 'error') {
-      elements.syncModeLabel.textContent = 'Modo sincronizado';
-      elements.syncMessage.textContent = `Os teus dados estão sincronizados${authenticatedUser?.login ? ` como ${authenticatedUser.login}` : ''}.`;
-    } else if (state === 'error') {
-      elements.syncModeLabel.textContent = authState === 'authenticated'
-        ? 'Sessão ativa · sincronização indisponível'
-        : authMode === 'synced' ? 'Sincronização temporariamente indisponível' : 'Modo local';
-      elements.syncMessage.textContent = syncError || 'Não foi possível ligar ao serviço. Os teus dados continuam guardados neste dispositivo.';
-    } else if (authMode === 'pending') {
-      elements.syncModeLabel.textContent = 'Escolhe os dados a sincronizar';
-      elements.syncMessage.textContent = 'A tua conta está ligada. Os dados locais continuam preservados até escolheres como avançar.';
-    } else if (authState === 'authenticated') {
-      elements.syncModeLabel.textContent = 'Sessão GitHub ativa';
-      elements.syncMessage.textContent = 'Os teus dados continuam guardados neste dispositivo. Escolhe sincronizar quando quiseres associá-los à tua conta.';
-    } else {
-      elements.syncModeLabel.textContent = 'Modo local';
-      elements.syncMessage.textContent = 'Os teus dados estão guardados neste dispositivo. Entra com GitHub para sincronizar entre dispositivos.';
-    }
-    const isChecking = authState === 'checking';
-    const isAuthenticated = authState === 'authenticated';
-    const canRetrySession = state === 'connection-error';
-    document.querySelector('main').hidden = (isChecking && !canRetrySession) || state === 'loading-data';
-    elements.topbarLogoutButton.hidden = !isAuthenticated;
-    elements.syncAction.hidden = (isChecking && !canRetrySession) || state === 'loading-data' ||
-      (isAuthenticated && authMode === 'synced' && !needsMigrationChoice && state !== 'error');
-    elements.syncAction.textContent = state === 'connection-error'
-      ? 'Tentar novamente'
-      : state === 'error' && isAuthenticated && authMode !== 'synced'
-        ? 'Carregar dados da conta'
-      : isAuthenticated && authMode !== 'synced'
-        ? 'Carregar dados da conta'
-      : authMode === 'synced' && state === 'error'
-        ? 'Tentar sincronizar novamente'
-      : authState === 'authenticated' && (authMode !== 'synced' || needsMigrationChoice)
-        ? 'Escolher dados para sincronizar'
-      : state === 'checking' ? 'Ver opções de sincronização' : 'Sincronizar os meus dados';
-    elements.profileSyncStatus.textContent = authMode === 'synced'
-      ? `Modo sincronizado${authenticatedUser?.login ? ` com GitHub como ${authenticatedUser.login}` : ''}.`
-      : authMode === 'pending'
-        ? 'Sessão iniciada. Escolhe como combinar os dados antes de sincronizar.'
-        : state === 'error'
-          ? authState === 'authenticated'
-            ? 'A sessão GitHub está ativa, mas os dados não foram carregados. Os dados locais foram mantidos; tenta novamente.'
-            : 'Não foi possível verificar a sessão. Podes continuar em modo local.'
-          : authState === 'authenticated'
-            ? 'Sessão GitHub ativa; a sincronização ainda não foi selecionada.'
-            : 'Modo local: os dados ficam guardados neste dispositivo.';
-    elements.githubLoginButton.hidden = isChecking || isAuthenticated;
-    elements.githubCreateButton.hidden = isChecking || isAuthenticated;
-    elements.logoutButton.hidden = !isAuthenticated;
-    elements.restoreLocalBackupButton.hidden = isChecking || isAuthenticated || !getLocalBackupKeys().length;
-    renderUserName();
+  function exportData() {
+    const documentData = makeBackupDocument();
+    const file = new Blob([JSON.stringify(documentData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `eco-plus-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function getLocalBackupKeys() {
-    return Object.keys(localStorage).filter(key => key.startsWith(LOCAL_BACKUP_PREFIX));
-  }
-
-  function restoreLocalBackup() {
-    const backups = getLocalBackupKeys().map(key => {
-      try {
-        const value = JSON.parse(localStorage.getItem(key));
-        return { value, savedAt: value.savedAt || '' };
-      } catch {
-        return null;
-      }
-    }).filter(Boolean).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
-    const backup = backups.at(-1);
-    if (!backup || !window.confirm('Substituir os dados locais atuais pela cópia anterior à sincronização? Os dados da conta sincronizada continuam guardados na conta.')) return;
-    authMode = 'local';
-    authenticatedUser = null;
-    data = normalizeAppData(backup.value);
-    saveData();
-    elements.profileDialog.close();
-    render();
-    setSyncStatus('local');
-  }
-
-  function mergeAppData(local, remote) {
-    const merged = cloneData(remote);
-    for (const [key, localMonth] of Object.entries(local.months)) {
-      if (!merged.months[key]) {
-        merged.months[key] = cloneData(localMonth);
-        continue;
-      }
-      const knownIds = new Set(merged.months[key].expenses.map(expense => expense.id));
-      merged.months[key].expenses.push(...localMonth.expenses.filter(expense => !knownIds.has(expense.id)));
-    }
-    const subscriptionIds = new Set(merged.subscriptions.map(subscription => subscription.id));
-    merged.subscriptions.push(...local.subscriptions.filter(subscription => !subscriptionIds.has(subscription.id)));
-    if (local.profile?.name) merged.profile.name = local.profile.name;
-    return merged;
-  }
-
-  function enterSyncedMode(nextData, shouldUpload = false) {
-    if (!preserveLocalBackup()) return;
-    authMode = 'synced';
-    authState = 'authenticated';
-    data = normalizeAppData(cloneData(nextData));
-    needsMigrationChoice = false;
-    persistSyncedData();
-    localData = cloneData(data);
-    if (elements.syncDecisionDialog.open) elements.syncDecisionDialog.close();
-    render();
-    setSyncStatus('synced');
-    if (shouldUpload) flushRemoteSave();
-    console.info('[DATA] Server data applied');
-  }
-
-  function openSyncDecision(local, remote) {
-    localData = cloneData(local);
-    if (!preserveLocalBackup()) {
-      data = cloneData(local);
-      authMode = 'local';
-      render();
-      setSyncStatus('error');
-      return;
-    }
-    authMode = 'pending';
-    pendingLocalData = cloneData(local);
-    pendingRemoteData = cloneData(remote);
-    needsMigrationChoice = true;
-    data = cloneData(remote);
-    const localHasData = hasRelevantData(local);
-    const remoteHasData = hasRelevantData(remote);
-    elements.syncDecisionCopy.textContent = remoteHasData
-      ? 'Existem dados neste dispositivo e na conta. Podes escolher uma origem ou combinar os dados: em meses coincidentes, o rendimento da conta mantém-se e os movimentos locais ainda não existentes são adicionados. Nada local será apagado.'
-      : 'Encontrámos dados neste dispositivo e a conta ainda não tem dados. Podes sincronizar os dados atuais ou começar com a conta vazia.';
-    elements.useAccountDataButton.hidden = !remoteHasData;
-    elements.syncLocalDataButton.hidden = !localHasData;
-    elements.mergeDataButton.hidden = !localHasData || !remoteHasData;
-    elements.startFreshButton.hidden = remoteHasData;
-    render();
-    setSyncStatus('pending');
-    elements.syncDecisionDialog.showModal();
-    console.info('[DATA] Server data applied');
-  }
-
-  function persistSyncedData() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
-    try { localStorage.setItem(syncCacheKey(), JSON.stringify(data)); } catch {}
-    localData = cloneData(data);
-  }
-
-  async function loadAuthenticatedData() {
-    if (dataLoadInFlight || authState !== 'authenticated') return;
-    dataLoadInFlight = true;
-    setSyncStatus('loading-data');
-    console.info('[AUTH] Loading server data');
+  async function importData(file) {
+    elements.backupError.hidden = true;
+    if (!file) return;
     try {
-      const response = await apiFetch('/api/data');
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const remoteData = normalizeAppData(await response.json());
-      console.info('[DATA] Server data loaded');
-
-      localData = loadData();
-      const accountHasBeenLinked = localStorage.getItem(syncCacheKey()) !== null;
-      if (!accountHasBeenLinked && hasRelevantData(localData)) {
-        openSyncDecision(localData, remoteData);
-        return;
+      const backup = JSON.parse(await file.text());
+      if (backup?.format !== 'eco-plus-backup' || backup.formatVersion !== 1 || !backup.data) {
+        throw new Error('Este ficheiro não parece ser uma cópia de segurança Eco+.');
       }
+      if (!backup.data.months || typeof backup.data.months !== 'object' || Array.isArray(backup.data.months)) {
+        throw new Error('A cópia não contém os meses e dados financeiros esperados.');
+      }
+      const importedData = normalizeAppData(backup.data);
+      if (!window.confirm('Importar esta cópia vai substituir o nome, tema, meses, despesas e subscrições guardados neste dispositivo. Esta ação não pode ser anulada. Continuar?')) return;
 
-      enterSyncedMode(remoteData);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(importedData));
+      const importedTheme = ['dark', 'light'].includes(backup.settings?.theme) ? backup.settings.theme : 'system';
+      if (importedTheme === 'system') localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, importedTheme);
+      const isDark = importedTheme === 'dark' || (importedTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+      elements.themeToggle.setAttribute('aria-label', isDark ? 'Ativar modo claro' : 'Ativar modo escuro');
+      selectedMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(backup.settings?.selectedMonth || '')
+        ? backup.settings.selectedMonth
+        : currentMonthKey();
+      data = importedData;
+      elements.profileDialog.close();
+      renderUserName();
+      render();
+      showView('monthView');
+      triggerFeedback('success');
     } catch (error) {
-      const cachedData = localStorage.getItem(syncCacheKey());
-      data = cachedData ? normalizeAppData(JSON.parse(cachedData)) : loadData();
-      localData = cloneData(data);
-      authMode = 'local';
-      syncError = 'A sessão está ativa, mas não foi possível carregar os dados da conta. Os dados locais foram preservados.';
-      render();
-      setSyncStatus('error');
-      console.error('[DATA] Server data could not be loaded', { name: error?.name, message: error?.message });
+      elements.backupError.textContent = error instanceof SyntaxError
+        ? 'O ficheiro não contém JSON válido.'
+        : error.message || 'Não foi possível importar este ficheiro.';
+      elements.backupError.hidden = false;
+      triggerFeedback('warning');
     } finally {
-      dataLoadInFlight = false;
+      elements.importDataFile.value = '';
     }
   }
 
-  async function verifySession() {
-    if (sessionCheckInFlight || authMode === 'pending') return;
-    sessionCheckInFlight = true;
-    authMode = 'checking';
-    setSyncStatus('checking');
-    console.info('[AUTH] Checking session');
-    try {
-      const response = await apiFetch('/api/me');
-      console.info('[AUTH] /api/me response', { status: response.status });
-      const session = await response.json();
-      console.info('[AUTH] /api/me authentication result', { authenticated: session.authenticated === true });
-      if (session.authenticated === false) {
-        authMode = 'local';
-        authState = 'unauthenticated';
-        data = loadData();
-        localData = cloneData(data);
-        render();
-        setSyncStatus('local');
-        return;
-      }
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      if (session.authenticated !== true) throw new Error('Resposta de sessão inválida');
-
-      authenticatedUser = session.user || null;
-      authState = 'authenticated';
-      authMode = 'loading';
-      console.info('[AUTH] Authenticated user', { login: authenticatedUser?.login || null });
-      setSyncStatus('loading-data');
-      localData = loadData();
-      await loadAuthenticatedData();
-    } catch (error) {
-      authenticatedUser = null;
-      authState = 'checking';
-      authMode = 'local';
-      data = loadData();
-      localData = cloneData(data);
-      syncError = error?.name === 'AbortError'
-        ? 'A verificação da sessão demorou demasiado. Os teus dados locais foram preservados; tenta novamente.'
-        : 'Não foi possível verificar a sessão. Os teus dados locais foram preservados; tenta novamente.';
-      render();
-      setSyncStatus('connection-error');
-      console.error('[AUTH] Session check failed', { name: error?.name, message: error?.message });
-    } finally {
-      sessionCheckInFlight = false;
-    }
-  }
-
-  function redirectToGitHub() {
-    window.location.assign(`${API_BASE}/auth`);
-  }
-
-  async function logout() {
-    await flushRemoteSave();
-    const cachedAccountData = authMode === 'synced' ? localStorage.getItem(syncCacheKey()) : null;
-    try {
-      const response = await apiFetch('/auth/logout', { credentials: 'include' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    } catch {
-      syncError = 'Não foi possível confirmar o fim da sessão com o serviço. Os teus dados locais foram mantidos.';
-    }
-    authMode = 'local';
-    authState = 'unauthenticated';
-    console.info('[AUTH] Logged out');
-    authenticatedUser = null;
-    data = loadData();
-    if (cachedAccountData) {
-      try {
-        data = normalizeAppData(JSON.parse(cachedAccountData));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      } catch {}
-    }
-    localData = cloneData(data);
-    elements.profileDialog.close();
-    elements.syncDecisionDialog.close();
-    render();
-    setSyncStatus(syncError ? 'error' : 'local');
-  }
+  elements.exportDataButton.addEventListener('click', exportData);
+  elements.importDataButton.addEventListener('click', () => elements.importDataFile.click());
+  elements.importDataFile.addEventListener('change', event => importData(event.target.files[0]));
 
   elements.themeToggle.addEventListener('click', () => {
     const isDark = document.documentElement.dataset.theme !== 'dark';
@@ -996,14 +662,7 @@
   elements.expenseCategory.innerHTML = CATEGORIES.map(([category, emoji]) => `<option value="${escapeHTML(category)}">${emoji} ${escapeHTML(category)}</option>`).join('');
   document.getElementById('appVersion').textContent = `Eco+ v${APP_VERSION}`;
   renderUserName();
-  setSyncStatus('checking');
-  verifySession();
-  window.addEventListener('pageshow', event => {
-    if (event.persisted && (authMode === 'local' || authMode === 'checking' || authMode === 'error')) verifySession();
-  });
-  window.addEventListener('focus', () => {
-    if (authMode === 'local' || authMode === 'error') verifySession();
-  });
+  render();
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     const updateReloadKey = 'eco-plus-sw-update-reload';
     try { sessionStorage.removeItem(updateReloadKey); } catch {}

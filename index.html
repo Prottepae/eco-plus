@@ -26,7 +26,6 @@
           <span class="user-pill__label">Olá</span>
           <strong id="userNameLabel">Tu</strong>
         </button>
-          <button class="topbar-logout" id="topbarLogoutButton" type="button" aria-label="Terminar sessão" title="Terminar sessão" hidden>Sair</button>
         <button class="icon-button theme-toggle" id="themeToggle" type="button" aria-label="Ativar modo escuro" title="Alternar tema">
             <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
           <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 14.1A8.5 8.5 0 0 1 9.9 3.2 8.5 8.5 0 1 0 20.8 14.1Z"/></svg>
@@ -108,12 +107,11 @@
         </div>
       </section>
     </main>
-    <section class="sync-notice" id="syncNotice" aria-live="polite">
-      <span class="sync-mode" id="syncModeLabel">Modo local</span>
-      <p id="syncMessage">Os teus dados estão guardados neste dispositivo. Entra com GitHub para sincronizar entre dispositivos.</p>
-      <button class="text-action" id="syncAction" type="button">Sincronizar os meus dados</button>
+    <section class="local-data-notice" aria-live="polite">
+      <span class="local-data-label">Dados neste dispositivo</span>
+      <p>Os teus dados ficam guardados localmente. Exporta um ficheiro para transferi-los ou manter uma cópia de segurança.</p>
     </section>
-    <footer class="privacy-note"><span class="privacy-lock" aria-hidden="true">●</span> Os teus dados ficam neste dispositivo; a sincronização é opcional.<span class="app-version" id="appVersion">Eco+ v1.1.2</span></footer>
+    <footer class="privacy-note"><span class="privacy-lock" aria-hidden="true">●</span> Os teus dados ficam neste dispositivo.<span class="app-version" id="appVersion">Eco+ v1.2.1</span></footer>
   </div>
 
   <dialog class="sheet-dialog" id="expenseDialog" aria-labelledby="expenseDialogTitle">
@@ -169,16 +167,15 @@
       <input class="text-input" id="profileName" name="name" type="text" maxlength="30" placeholder="Ex.: João" required>
       <p class="form-error" id="profileError" role="alert" hidden></p>
       <button class="primary-button submit-button" type="submit">Guardar nome</button>
-      <div class="profile-sync-block">
-        <p class="field-label">Sincronização</p>
-        <p class="profile-sync-status" id="profileSyncStatus">Modo local: os dados ficam guardados neste dispositivo.</p>
-        <h3>Usa o Eco+ em qualquer dispositivo</h3>
-        <p class="profile-sync-description">Entra com GitHub para sincronizar as tuas receitas, despesas e subscrições entre dispositivos e manter uma cópia associada à tua conta.</p>
-        <button class="primary-button" id="githubLoginButton" type="button">Entrar com GitHub</button>
-        <button class="text-action account-create-button" id="githubCreateButton" type="button">Criar conta</button>
-        <p class="profile-sync-description">A conta Eco+ é criada através da autenticação GitHub. Não precisas de criar uma palavra-passe Eco+.</p>
-        <button class="delete-button" id="logoutButton" type="button" hidden>Terminar sessão</button>
-        <button class="secondary-button" id="restoreLocalBackupButton" type="button" hidden>Restaurar cópia local anterior</button>
+      <div class="profile-backup-block">
+        <p class="field-label">Cópia de segurança</p>
+        <p class="profile-backup-description">Exporta o teu nome, tema, mês selecionado, rendimentos, despesas, reembolsos e subscrições para um ficheiro JSON. Podes importá-lo noutro dispositivo.</p>
+        <div class="backup-actions">
+          <button class="secondary-button" id="exportDataButton" type="button">Exportar dados</button>
+          <button class="secondary-button" id="importDataButton" type="button">Importar ficheiro</button>
+        </div>
+        <input id="importDataFile" type="file" accept="application/json,.json" hidden>
+        <p class="form-error" id="backupError" role="alert" hidden></p>
       </div>
     </form>
   </dialog>
@@ -200,20 +197,6 @@
       <button class="primary-button submit-button" type="submit">Guardar subscrição</button>
       <button class="delete-button" id="deleteSubscriptionButton" type="button" hidden>Eliminar subscrição</button>
     </form>
-  </dialog>
-
-  <dialog class="sheet-dialog compact-dialog" id="syncDecisionDialog" aria-labelledby="syncDecisionTitle">
-    <div class="sheet-form">
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <div class="sheet-heading"><div><p class="eyebrow">Dados da conta</p><h2 id="syncDecisionTitle">Escolhe os dados a usar</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
-      <p class="sync-decision-copy" id="syncDecisionCopy"></p>
-      <div class="sync-decision-actions">
-        <button class="primary-button" id="useAccountDataButton" type="button">Usar dados da conta</button>
-        <button class="secondary-button" id="syncLocalDataButton" type="button">Sincronizar dados locais</button>
-        <button class="secondary-button" id="mergeDataButton" type="button">Combinar os dados</button>
-        <button class="text-action" id="startFreshButton" type="button">Começar do zero</button>
-      </div>
-    </div>
   </dialog>
 
   <script src="app.js" defer></script>
