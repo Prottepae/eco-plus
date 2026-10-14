@@ -9,7 +9,7 @@
   const REDUCED_MOTION_KEY = 'eco-plus-reduced-motion';
   const SELECTED_MONTH_KEY = 'eco-plus-selected-month';
   const PALETTES = ['green', 'ocean', 'lavender', 'amber'];
-  const APP_VERSION = '1.7.0';
+  const APP_VERSION = '1.7.1';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -421,10 +421,7 @@
   }
 
   function getSortedTransactions(expenses) {
-    return expenses
-      .map((expense, index) => ({ expense, index }))
-      .sort((a, b) => b.expense.date.localeCompare(a.expense.date) || b.index - a.index)
-      .map(({ expense }) => expense);
+    return [...expenses].reverse();
   }
 
   function renderTransactionRows(expenses) {
