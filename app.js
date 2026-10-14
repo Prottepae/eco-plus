@@ -7,9 +7,12 @@
   const PALETTE_KEY = 'eco-plus-palette';
   const COMPACT_MODE_KEY = 'eco-plus-compact-mode';
   const REDUCED_MOTION_KEY = 'eco-plus-reduced-motion';
+  const HIDE_AMOUNTS_KEY = 'eco-plus-hide-amounts';
+  const SOUND_FEEDBACK_KEY = 'eco-plus-sound-feedback';
+  const VIBRATION_FEEDBACK_KEY = 'eco-plus-vibration-feedback';
   const SELECTED_MONTH_KEY = 'eco-plus-selected-month';
-  const PALETTES = ['green', 'ocean', 'lavender', 'amber'];
-  const APP_VERSION = '1.7.1';
+  const PALETTES = ['green', 'ocean', 'lavender', 'amber', 'coral', 'midnight', 'mint'];
+  const APP_VERSION = '1.9.0';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -24,6 +27,10 @@
     'transactionsHeading', 'transactionsMonthPicker', 'allTransactionsList', 'viewMoreTransactionsButton',
     'backToMonthButton', 'balanceAmount', 'negativeNote',
     'spentPercent', 'progressTrack', 'progressFill', 'incomeAmount', 'spentAmount', 'editIncomeButton',
+    'balanceVisibilityToggle',
+    'budgetCard', 'editBudgetButton', 'budgetSpentLabel', 'budgetAmounts', 'budgetTrack', 'budgetFill',
+    'budgetStatus', 'budgetDialog', 'budgetForm', 'budgetAmount', 'budgetMonthLabel', 'budgetError',
+    'clearBudgetButton',
     'monthComparison', 'comparisonIcon', 'comparisonText', 'exportMonthCsvButton',
     'awardStrip', 'expenseList', 'expenseFilters', 'expenseSearch', 'expenseCategoryFilter', 'expenseTypeFilter',
     'clearExpenseFilters', 'expenseCount', 'categoryBreakdown', 'categoryBreakdownList',
@@ -33,7 +40,8 @@
     'monthDate', 'monthIncome', 'monthError', 'incomeDialog', 'incomeForm', 'incomeValue',
     'incomeMonthLabel', 'incomeError', 'themeToggle', 'userPill', 'userNameLabel', 'profileDialog',
     'profileForm', 'profileName', 'profileError', 'themeModeSelect', 'colorPaletteSelect',
-    'compactModeToggle', 'reducedMotionToggle', 'expenseType', 'subscriptionList', 'subscriptionDialog',
+    'compactModeToggle', 'reducedMotionToggle', 'hideAmountsToggle', 'soundFeedbackToggle',
+    'vibrationFeedbackToggle', 'expenseType', 'subscriptionList', 'subscriptionDialog',
     'subscriptionForm', 'subscriptionDialogTitle', 'subscriptionId', 'subscriptionName', 'subscriptionAmount', 'subscriptionStartMonth',
     'subscriptionEndDate', 'subscriptionError', 'deleteSubscriptionButton', 'exportDataButton', 'importDataButton',
     'importDataFile', 'backupError'
@@ -47,6 +55,10 @@
   let colorPalette = loadColorPalette();
   let compactMode = localStorage.getItem(COMPACT_MODE_KEY) === 'true';
   let reducedMotion = localStorage.getItem(REDUCED_MOTION_KEY) === 'true';
+  let hideAmounts = localStorage.getItem(HIDE_AMOUNTS_KEY) === 'true';
+  let revealAmounts = false;
+  let soundFeedback = localStorage.getItem(SOUND_FEEDBACK_KEY) !== 'false';
+  let vibrationFeedback = localStorage.getItem(VIBRATION_FEEDBACK_KEY) !== 'false';
 
   function currentMonthKey() {
     const now = new Date();
@@ -73,6 +85,9 @@
     localStorage.setItem(PALETTE_KEY, colorPalette);
     localStorage.setItem(COMPACT_MODE_KEY, String(compactMode));
     localStorage.setItem(REDUCED_MOTION_KEY, String(reducedMotion));
+    localStorage.setItem(HIDE_AMOUNTS_KEY, String(hideAmounts));
+    localStorage.setItem(SOUND_FEEDBACK_KEY, String(soundFeedback));
+    localStorage.setItem(VIBRATION_FEEDBACK_KEY, String(vibrationFeedback));
     localStorage.setItem(SELECTED_MONTH_KEY, selectedMonth);
   }
 
@@ -82,6 +97,11 @@
     document.documentElement.dataset.palette = colorPalette;
     document.documentElement.dataset.density = compactMode ? 'compact' : 'comfortable';
     document.documentElement.dataset.motion = reducedMotion ? 'reduced' : 'full';
+    document.documentElement.dataset.hideAmounts = String(hideAmounts);
+    document.documentElement.dataset.revealAmounts = String(revealAmounts);
+    elements.balanceVisibilityToggle.hidden = !hideAmounts;
+    elements.balanceVisibilityToggle.setAttribute('aria-pressed', String(revealAmounts));
+    elements.balanceVisibilityToggle.setAttribute('aria-label', revealAmounts ? 'Ocultar valores' : 'Mostrar valores');
     elements.themeToggle.setAttribute('aria-label', isDark ? 'Ativar modo claro' : 'Ativar modo escuro');
   }
 
@@ -90,10 +110,15 @@
     elements.colorPaletteSelect.value = colorPalette;
     elements.compactModeToggle.checked = compactMode;
     elements.reducedMotionToggle.checked = reducedMotion;
+    elements.hideAmountsToggle.checked = hideAmounts;
+    elements.soundFeedbackToggle.checked = soundFeedback;
+    elements.vibrationFeedbackToggle.checked = vibrationFeedback;
   }
 
   function setSelectedMonth(month) {
     selectedMonth = month;
+    revealAmounts = false;
+    applyPreferences();
     localStorage.setItem(SELECTED_MONTH_KEY, selectedMonth);
   }
 
@@ -131,6 +156,7 @@
         continue;
       }
       month.income = Math.max(0, Number(month.income));
+      month.budget = Number.isFinite(Number(month.budget)) && Number(month.budget) > 0 ? Number(month.budget) : 0;
       month.expenses = Array.isArray(month.expenses) ? month.expenses.map(normalizeExpense).filter(Boolean) : [];
     }
     return parsed;
@@ -240,17 +266,23 @@
 
   function triggerFeedback(type = 'success') {
     if (type === 'success') {
-      triggerHaptic([10]);
-      playTone(660, 0.08, 'triangle', 0.06, 0);
-      playTone(840, 0.11, 'triangle', 0.04, 0.08);
+      if (vibrationFeedback) triggerHaptic([10]);
+      if (soundFeedback) {
+        playTone(660, 0.08, 'triangle', 0.06, 0);
+        playTone(840, 0.11, 'triangle', 0.04, 0.08);
+      }
     } else if (type === 'delete') {
-      triggerHaptic([18, 38, 18]);
-      playTone(180, 0.14, 'sawtooth', 0.05, 0);
-      playTone(120, 0.18, 'square', 0.04, 0.08);
+      if (vibrationFeedback) triggerHaptic([18, 38, 18]);
+      if (soundFeedback) {
+        playTone(180, 0.14, 'sawtooth', 0.05, 0);
+        playTone(120, 0.18, 'square', 0.04, 0.08);
+      }
     } else {
-      triggerHaptic([30, 20, 30]);
-      playTone(340, 0.12, 'square', 0.04, 0);
-      playTone(290, 0.2, 'square', 0.03, 0.12);
+      if (vibrationFeedback) triggerHaptic([30, 20, 30]);
+      if (soundFeedback) {
+        playTone(340, 0.12, 'square', 0.04, 0);
+        playTone(290, 0.2, 'square', 0.03, 0.12);
+      }
     }
   }
 
@@ -311,6 +343,7 @@
       elements.progressTrack.setAttribute('aria-valuenow', '0');
       elements.negativeNote.hidden = true;
       elements.editIncomeButton.hidden = true;
+      elements.budgetCard.hidden = true;
       elements.awardStrip.innerHTML = '<span class="award-pill award-pill--muted"><span>🏁</span>Começa o mês</span>';
       elements.monthComparison.hidden = true;
       elements.exportMonthCsvButton.hidden = true;
@@ -333,6 +366,7 @@
     elements.progressTrack.setAttribute('aria-valuenow', String(Math.min(100, Math.max(0, percentage))));
     elements.negativeNote.hidden = balance >= 0;
     elements.editIncomeButton.hidden = false;
+    renderBudget(month, totalSpent, refunds);
     elements.exportMonthCsvButton.hidden = false;
     elements.awardStrip.innerHTML = getAwards(month).map(award => `<span class="award-pill award-pill--${balance < 0 ? 'warning' : 'success'}"><span>${award.icon}</span>${award.label}</span>`).join('');
     if (refunds > 0) {
@@ -347,6 +381,42 @@
     renderMonthComparison(totalSpent);
     renderCategoryBreakdown(month);
     renderExpenseList(month);
+  }
+
+  function renderBudget(month, totalSpent, refunds) {
+    const budget = Number(month.budget) || 0;
+    elements.budgetCard.hidden = false;
+    elements.budgetSpentLabel.textContent = budget > 0 ? 'Utilizado' : 'Orçamento não definido';
+    elements.budgetAmounts.textContent = budget > 0 ? `${formatCurrency(Math.max(0, totalSpent - refunds))} / ${formatCurrency(budget)}` : '';
+    elements.budgetFill.style.width = '0%';
+    elements.budgetTrack.setAttribute('aria-valuenow', '0');
+    elements.budgetTrack.setAttribute('aria-valuetext', budget > 0 ? '0% utilizado' : 'Orçamento não definido');
+    elements.budgetTrack.hidden = budget <= 0;
+    elements.budgetStatus.classList.remove('is-warning', 'is-over');
+    if (budget <= 0) {
+      elements.budgetStatus.textContent = 'Define um limite para acompanhares as despesas deste mês.';
+      elements.editBudgetButton.textContent = 'Definir';
+      return;
+    }
+
+    const netSpent = Math.max(0, totalSpent - refunds);
+    const percentage = netSpent / budget * 100;
+    const boundedPercentage = Math.min(100, percentage);
+    const displayPercent = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 }).format(percentage);
+    elements.budgetFill.style.width = `${boundedPercentage}%`;
+    elements.budgetTrack.setAttribute('aria-valuenow', String(boundedPercentage));
+    elements.budgetTrack.setAttribute('aria-valuetext', `${displayPercent}% utilizado`);
+    elements.editBudgetButton.textContent = 'Editar';
+
+    if (percentage >= 100) {
+      elements.budgetStatus.textContent = `Ultrapassaste o orçamento em ${formatCurrency(netSpent - budget)}.`;
+      elements.budgetStatus.classList.add('is-over');
+    } else if (percentage >= 80) {
+      elements.budgetStatus.textContent = `${displayPercent}% utilizado — restam ${formatCurrency(budget - netSpent)}.`;
+      elements.budgetStatus.classList.add('is-warning');
+    } else {
+      elements.budgetStatus.textContent = `${displayPercent}% utilizado — restam ${formatCurrency(budget - netSpent)}.`;
+    }
   }
 
   function renderMonthComparison(currentSpent) {
@@ -592,6 +662,44 @@
     elements.incomeMonthLabel.textContent = formatMonth(selectedMonth);
     elements.incomeError.hidden = true;
     elements.incomeDialog.showModal();
+  });
+  elements.editBudgetButton.addEventListener('click', openBudgetDialog);
+  elements.clearBudgetButton.addEventListener('click', () => {
+    const month = getMonth();
+    if (!month) return;
+    month.budget = 0;
+    saveData();
+    elements.budgetDialog.close();
+    render();
+    triggerFeedback('success');
+  });
+
+  function openBudgetDialog() {
+    const month = getMonth();
+    if (!month) return;
+    elements.budgetAmount.value = month.budget > 0 ? Number(month.budget).toFixed(2) : '';
+    elements.budgetMonthLabel.textContent = formatMonth(selectedMonth);
+    elements.budgetError.hidden = true;
+    elements.budgetDialog.showModal();
+  }
+
+  elements.budgetForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const value = elements.budgetAmount.value.trim();
+    const budget = value === '' ? 0 : Number(value);
+    if (!Number.isFinite(budget) || budget < 0) {
+      elements.budgetError.textContent = 'Indica um orçamento igual ou superior a zero.';
+      elements.budgetError.hidden = false;
+      triggerFeedback('warning');
+      return;
+    }
+    const month = getMonth();
+    if (!month) return;
+    month.budget = Math.round(budget * 100) / 100;
+    saveData();
+    elements.budgetDialog.close();
+    render();
+    triggerFeedback('success');
   });
 
   elements.monthPicker.addEventListener('change', event => {
@@ -877,7 +985,7 @@
       formatVersion: 1,
       appVersion: APP_VERSION,
       exportedAt: new Date().toISOString(),
-      settings: { theme: themeMode, themeMode, palette: colorPalette, compactMode, reducedMotion, selectedMonth },
+      settings: { theme: themeMode, themeMode, palette: colorPalette, compactMode, reducedMotion, hideAmounts, soundFeedback, vibrationFeedback, selectedMonth },
       data: cloneData(data)
     };
   }
@@ -915,6 +1023,10 @@
       colorPalette = PALETTES.includes(backup.settings?.palette) ? backup.settings.palette : 'green';
       compactMode = backup.settings?.compactMode === true;
       reducedMotion = backup.settings?.reducedMotion === true;
+      hideAmounts = backup.settings?.hideAmounts === true;
+      revealAmounts = false;
+      soundFeedback = backup.settings?.soundFeedback !== false;
+      vibrationFeedback = backup.settings?.vibrationFeedback !== false;
       setSelectedMonth(/^\d{4}-(0[1-9]|1[0-2])$/.test(backup.settings?.selectedMonth || '')
         ? backup.settings.selectedMonth
         : currentMonthKey());
@@ -970,6 +1082,24 @@
     reducedMotion = elements.reducedMotionToggle.checked;
     savePreferences();
     applyPreferences();
+  });
+  elements.hideAmountsToggle.addEventListener('change', () => {
+    hideAmounts = elements.hideAmountsToggle.checked;
+    revealAmounts = false;
+    savePreferences();
+    applyPreferences();
+  });
+  elements.balanceVisibilityToggle.addEventListener('click', () => {
+    revealAmounts = !revealAmounts;
+    applyPreferences();
+  });
+  elements.soundFeedbackToggle.addEventListener('change', () => {
+    soundFeedback = elements.soundFeedbackToggle.checked;
+    savePreferences();
+  });
+  elements.vibrationFeedbackToggle.addEventListener('change', () => {
+    vibrationFeedback = elements.vibrationFeedbackToggle.checked;
+    savePreferences();
   });
   const colorSchemePreference = window.matchMedia('(prefers-color-scheme: dark)');
   const handleSystemThemeChange = () => {
