@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Generated build and test output
+dist/
+build/
+coverage/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# Operating system files
+.DS_Store
+Thumbs.db
