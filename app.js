@@ -9,7 +9,7 @@
   const REDUCED_MOTION_KEY = 'eco-plus-reduced-motion';
   const SELECTED_MONTH_KEY = 'eco-plus-selected-month';
   const PALETTES = ['green', 'ocean', 'lavender', 'amber'];
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.7.0';
   const CATEGORIES = [
     ['Alimentação', '🍎'], ['Transportes', '🚗'], ['Casa', '🏠'],
     ['Entretenimento', '🎬'], ['Compras', '🛍️'], ['Subscrições', '📱'],
@@ -20,7 +20,9 @@
   const dateFormatter = new Intl.DateTimeFormat('pt-PT', { day: 'numeric', month: 'short' });
   const currencyFormatter = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' });
   const elements = Object.fromEntries([
-    'monthView', 'historyView', 'monthHeading', 'monthPicker', 'balanceAmount', 'negativeNote',
+    'monthView', 'transactionsView', 'historyView', 'monthHeading', 'monthPicker',
+    'transactionsHeading', 'transactionsMonthPicker', 'allTransactionsList', 'viewMoreTransactionsButton',
+    'backToMonthButton', 'balanceAmount', 'negativeNote',
     'spentPercent', 'progressTrack', 'progressFill', 'incomeAmount', 'spentAmount', 'editIncomeButton',
     'monthComparison', 'comparisonIcon', 'comparisonText', 'exportMonthCsvButton',
     'awardStrip', 'expenseList', 'expenseFilters', 'expenseSearch', 'expenseCategoryFilter', 'expenseTypeFilter',
@@ -294,6 +296,7 @@
     renderHistory();
     renderMonthPicker();
     renderSubscriptions();
+    renderAllTransactions();
   }
 
   function renderMonth() {
@@ -313,6 +316,7 @@
       elements.exportMonthCsvButton.hidden = true;
       elements.categoryBreakdown.hidden = true;
       elements.expenseFilters.hidden = true;
+      elements.viewMoreTransactionsButton.hidden = true;
       elements.expenseList.innerHTML = `<div class="empty-state"><span class="empty-icon" aria-hidden="true">€</span><h2>Sem mês registado</h2><p>Cria este mês e define quanto recebeste para começares.</p><button class="text-action" type="button" data-action="create-month">Criar mês</button></div>`;
       return;
     }
@@ -404,32 +408,28 @@
   }
 
   function renderExpenseList(month) {
-    if (!month.expenses.length) {
-      elements.expenseFilters.hidden = true;
+    const sorted = getSortedTransactions(month.expenses);
+    const recent = sorted.slice(0, 5);
+    elements.viewMoreTransactionsButton.hidden = sorted.length <= recent.length;
+    elements.viewMoreTransactionsButton.textContent = 'Ver mais';
+    if (!recent.length) {
       elements.expenseList.innerHTML = '<div class="empty-state"><span class="empty-icon" aria-hidden="true">↘</span><h2>Sem despesas ainda</h2><p>Adiciona a primeira despesa para veres o teu saldo atualizado.</p></div>';
       return;
     }
 
-    elements.expenseFilters.hidden = false;
+    elements.expenseList.innerHTML = renderTransactionRows(recent);
+  }
+
+  function getSortedTransactions(expenses) {
+    return expenses
+      .map((expense, index) => ({ expense, index }))
+      .sort((a, b) => b.expense.date.localeCompare(a.expense.date) || b.index - a.index)
+      .map(({ expense }) => expense);
+  }
+
+  function renderTransactionRows(expenses) {
     const categoryIcons = Object.fromEntries(CATEGORIES);
-    const query = elements.expenseSearch.value.trim().toLocaleLowerCase('pt-PT');
-    const categoryFilter = elements.expenseCategoryFilter.value;
-    const typeFilter = elements.expenseTypeFilter.value;
-    const filtered = month.expenses.filter(expense => {
-      const matchesQuery = !query || `${expense.name} ${expense.category || ''}`.toLocaleLowerCase('pt-PT').includes(query);
-      const matchesCategory = categoryFilter === 'all' || expense.category === categoryFilter;
-      const matchesType = typeFilter === 'all' || expense.type === typeFilter;
-      return matchesQuery && matchesCategory && matchesType;
-    });
-    const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
-    const hasFilters = Boolean(query) || categoryFilter !== 'all' || typeFilter !== 'all';
-    elements.clearExpenseFilters.hidden = !hasFilters;
-    elements.expenseCount.textContent = `A mostrar ${sorted.length} de ${month.expenses.length} ${month.expenses.length === 1 ? 'movimento' : 'movimentos'}`;
-    if (!sorted.length) {
-      elements.expenseList.innerHTML = '<div class="empty-state"><span class="empty-icon" aria-hidden="true">⌕</span><h2>Sem resultados</h2><p>Não encontrámos movimentos com estes filtros. Experimenta alterar a pesquisa ou limpar os filtros.</p></div>';
-      return;
-    }
-    elements.expenseList.innerHTML = sorted.map((expense, index) => {
+    return expenses.map((expense, index) => {
       const date = new Date(`${expense.date}T12:00:00`);
       const isCredit = expense.type !== 'expense';
       const sign = isCredit ? '+' : '−';
@@ -447,6 +447,34 @@
         <span class="${valueClass}">${displayedValue}</span>
       </button>`;
     }).join('');
+  }
+
+  function renderAllTransactions() {
+    const month = getMonth();
+    elements.transactionsHeading.textContent = formatMonth(selectedMonth);
+    elements.expenseFilters.hidden = !month?.expenses.length;
+    if (!month?.expenses.length) {
+      elements.expenseCount.textContent = '0 movimentos';
+      elements.allTransactionsList.innerHTML = '<div class="empty-state"><span class="empty-icon" aria-hidden="true">↘</span><h2>Sem movimentos neste mês</h2><p>Volta ao resumo do mês para adicionar despesas, reembolsos ou valores recebidos.</p></div>';
+      return;
+    }
+
+    const query = elements.expenseSearch.value.trim().toLocaleLowerCase('pt-PT');
+    const categoryFilter = elements.expenseCategoryFilter.value;
+    const typeFilter = elements.expenseTypeFilter.value;
+    const filtered = month.expenses.filter(expense => {
+      const matchesQuery = !query || `${expense.name} ${expense.category || ''}`.toLocaleLowerCase('pt-PT').includes(query);
+      const matchesCategory = categoryFilter === 'all' || expense.category === categoryFilter;
+      const matchesType = typeFilter === 'all' || expense.type === typeFilter;
+      return matchesQuery && matchesCategory && matchesType;
+    });
+    const sorted = getSortedTransactions(filtered);
+    const hasFilters = Boolean(query) || categoryFilter !== 'all' || typeFilter !== 'all';
+    elements.clearExpenseFilters.hidden = !hasFilters;
+    elements.expenseCount.textContent = `A mostrar ${sorted.length} de ${month.expenses.length} ${month.expenses.length === 1 ? 'movimento' : 'movimentos'}`;
+    elements.allTransactionsList.innerHTML = sorted.length
+      ? renderTransactionRows(sorted)
+      : '<div class="empty-state"><span class="empty-icon" aria-hidden="true">⌕</span><h2>Sem resultados</h2><p>Não encontrámos movimentos com estes filtros. Experimenta alterar a pesquisa ou limpar os filtros.</p></div>';
   }
 
   function renderHistory() {
@@ -485,23 +513,27 @@
 
   function renderMonthPicker() {
     const keys = [...new Set([selectedMonth, ...Object.keys(data.months)])].sort((a, b) => b.localeCompare(a));
-    elements.monthPicker.innerHTML = keys.map(key => {
+    const options = keys.map(key => {
       const [year, month] = key.split('-').map(Number);
       const label = monthPickerFormatter.format(new Date(year, month - 1, 1));
       return `<option value="${key}"${key === selectedMonth ? ' selected' : ''}>${escapeHTML(label)}</option>`;
     }).join('');
+    elements.monthPicker.innerHTML = options;
+    elements.transactionsMonthPicker.innerHTML = options;
   }
 
   function showView(viewId) {
     activeView = viewId;
     elements.monthView.hidden = viewId !== 'monthView';
+    elements.transactionsView.hidden = viewId !== 'transactionsView';
     elements.historyView.hidden = viewId !== 'historyView';
     document.querySelectorAll('.view-tab').forEach(tab => {
-      const selected = tab.dataset.view === viewId;
+      const selected = tab.dataset.view === (viewId === 'transactionsView' ? 'monthView' : viewId);
       tab.classList.toggle('is-active', selected);
       tab.setAttribute('aria-current', selected ? 'page' : 'false');
     });
-    document.getElementById('addExpenseButton').hidden = viewId !== 'monthView';
+    document.getElementById('addExpenseButton').hidden = !['monthView', 'transactionsView'].includes(viewId);
+    if (viewId === 'transactionsView') renderAllTransactions();
   }
 
   function openMonthDialog() {
@@ -553,6 +585,8 @@
   document.getElementById('historyNewMonthButton').addEventListener('click', openMonthDialog);
   document.getElementById('firstMonthButton').addEventListener('click', openMonthDialog);
   document.getElementById('addExpenseButton').addEventListener('click', () => openExpenseDialog());
+  elements.viewMoreTransactionsButton.addEventListener('click', () => showView('transactionsView'));
+  elements.backToMonthButton.addEventListener('click', () => showView('monthView'));
   document.getElementById('addSubscriptionButton').addEventListener('click', () => openSubscriptionDialog());
   document.getElementById('editIncomeButton').addEventListener('click', () => {
     const month = getMonth();
@@ -567,14 +601,19 @@
     setSelectedMonth(event.target.value);
     render();
   });
-  elements.expenseSearch.addEventListener('input', () => renderExpenseList(getMonth()));
-  elements.expenseCategoryFilter.addEventListener('change', () => renderExpenseList(getMonth()));
-  elements.expenseTypeFilter.addEventListener('change', () => renderExpenseList(getMonth()));
+  elements.transactionsMonthPicker.addEventListener('change', event => {
+    setSelectedMonth(event.target.value);
+    render();
+    showView('transactionsView');
+  });
+  elements.expenseSearch.addEventListener('input', renderAllTransactions);
+  elements.expenseCategoryFilter.addEventListener('change', renderAllTransactions);
+  elements.expenseTypeFilter.addEventListener('change', renderAllTransactions);
   elements.clearExpenseFilters.addEventListener('click', () => {
     elements.expenseSearch.value = '';
     elements.expenseCategoryFilter.value = 'all';
     elements.expenseTypeFilter.value = 'all';
-    renderExpenseList(getMonth());
+    renderAllTransactions();
     elements.expenseSearch.focus();
   });
 
@@ -619,13 +658,15 @@
     triggerFeedback('delete');
   });
 
-  elements.expenseList.addEventListener('click', event => {
+  function handleExpenseListClick(event) {
     if (event.target.closest('[data-action="create-month"]')) return openMonthDialog();
     const row = event.target.closest('[data-expense-id]');
     if (!row) return;
     const expense = getMonth()?.expenses.find(item => item.id === row.dataset.expenseId);
     if (expense) openExpenseDialog(expense);
-  });
+  }
+  elements.expenseList.addEventListener('click', handleExpenseListClick);
+  elements.allTransactionsList.addEventListener('click', handleExpenseListClick);
 
   elements.historyList.addEventListener('click', event => {
     const row = event.target.closest('[data-month-key]');
