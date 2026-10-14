@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f5f0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Eco+">
+  <meta name="description" content="Controla o teu dinheiro, mês a mês, com privacidade e simplicidade.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+  <link rel="stylesheet" href="style.css">
+  <title>Eco+</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#mes" aria-label="Eco+, início">
+        <span class="brand-mark" aria-hidden="true">€</span>
+        <span>Eco+</span>
+      </a>
+      <div class="header-actions">
+        <button class="user-pill" id="userPill" type="button" aria-label="Editar nome">
+          <span class="user-pill__label">Olá</span>
+          <strong id="userNameLabel">Tu</strong>
+        </button>
+        <button class="icon-button theme-toggle" id="themeToggle" type="button" aria-label="Ativar modo escuro" title="Alternar tema">
+            <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 14.1A8.5 8.5 0 0 1 9.9 3.2 8.5 8.5 0 1 0 20.8 14.1Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <nav class="view-tabs" aria-label="Navegação principal">
+      <button class="view-tab is-active" type="button" data-view="monthView">Mês</button>
+      <button class="view-tab" type="button" data-view="historyView">Histórico</button>
+    </nav>
+
+    <main>
+      <section class="view-panel" id="monthView" aria-labelledby="monthHeading">
+        <div class="month-heading-row">
+          <div>
+            <p class="eyebrow">O teu resumo</p>
+            <h1 id="monthHeading">Este mês</h1>
+          </div>
+          <label class="month-picker-wrap" aria-label="Selecionar mês">
+            <select id="monthPicker" class="month-picker"></select>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg>
+          </label>
+        </div>
+
+        <section class="balance-card" aria-label="Saldo disponível">
+          <div class="balance-card-top">
+            <span class="balance-label">Disponível</span>
+            <span class="balance-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H20v14H6.5A2.5 2.5 0 0 1 4 16.5zM4 8h16m-4 5h.01"/><path d="M4 9V6a2 2 0 0 1 2-2h11"/></svg>
+            </span>
+          </div>
+          <p class="balance-amount" id="balanceAmount">0,00 €</p>
+          <p class="negative-note" id="negativeNote" hidden>O saldo deste mês está negativo.</p>
+          <div class="progress-area">
+            <div class="progress-meta"><span>Dinheiro utilizado</span><strong id="spentPercent">0%</strong></div>
+            <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Percentagem do rendimento gasto" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span class="progress-fill" id="progressFill"></span>
+            </div>
+          </div>
+        </section>
+
+        <div class="summary-grid" aria-label="Resumo do mês">
+          <article class="summary-item"><span class="summary-dot income-dot"></span><span class="summary-label">Recebido</span><strong id="incomeAmount">0,00 €</strong><button class="text-action" id="editIncomeButton" type="button">Editar</button></article>
+          <article class="summary-item"><span class="summary-dot spent-dot"></span><span class="summary-label">Gasto</span><strong id="spentAmount">0,00 €</strong></article>
+        </div>
+
+        <section class="month-comparison" id="monthComparison" aria-live="polite" hidden>
+          <span class="comparison-icon" id="comparisonIcon" aria-hidden="true"></span>
+          <div><strong class="comparison-text" id="comparisonText"></strong><span class="comparison-detail">Comparação com o mês registado anterior; inclui subscrições e exclui reembolsos.</span></div>
+        </section>
+
+        <div class="award-strip" id="awardStrip" aria-live="polite"></div>
+
+        <section class="subscription-section" aria-labelledby="subscriptionHeading">
+          <div class="section-heading">
+            <div><p class="eyebrow">Pagamentos recorrentes</p><h2 id="subscriptionHeading">Subscrições</h2></div>
+            <button class="text-action" id="addSubscriptionButton" type="button">+ Adicionar</button>
+          </div>
+          <div class="subscription-list" id="subscriptionList"></div>
+        </section>
+
+        <section class="category-breakdown" id="categoryBreakdown" aria-labelledby="categoryBreakdownHeading" hidden>
+          <div class="section-heading">
+            <div><p class="eyebrow">Para onde vai o teu dinheiro</p><h2 id="categoryBreakdownHeading">Gastos por categoria</h2></div>
+          </div>
+          <p class="breakdown-note">Despesas registadas, sem reembolsos nem subscrições automáticas.</p>
+          <div class="category-breakdown-list" id="categoryBreakdownList"></div>
+        </section>
+
+        <div class="section-heading expense-heading">
+          <div><p class="eyebrow">Movimentos</p><h2>Movimentos</h2></div>
+          <div class="expense-heading-actions">
+            <button class="text-action" id="exportMonthCsvButton" type="button" hidden>Exportar CSV</button>
+            <button class="text-action" id="newMonthButton" type="button">+ Novo mês</button>
+          </div>
+        </div>
+        <div class="expense-filters" id="expenseFilters" hidden>
+          <label class="search-field">
+            <span class="visually-hidden">Pesquisar movimentos</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+            <input id="expenseSearch" type="search" placeholder="Pesquisar movimentos" autocomplete="off">
+          </label>
+          <div class="filter-row">
+            <label class="filter-select-wrap">
+              <span class="visually-hidden">Filtrar por categoria</span>
+              <select id="expenseCategoryFilter" class="filter-select"><option value="all">Todas as categorias</option></select>
+            </label>
+            <label class="filter-select-wrap">
+              <span class="visually-hidden">Filtrar por tipo</span>
+              <select id="expenseTypeFilter" class="filter-select">
+                <option value="all">Todos os tipos</option>
+                <option value="expense">Despesas</option>
+                <option value="refund">Reembolsos</option>
+                <option value="received">Recebidos</option>
+              </select>
+            </label>
+            <button class="clear-filters" id="clearExpenseFilters" type="button" hidden>Limpar</button>
+          </div>
+          <p class="expense-count" id="expenseCount" aria-live="polite"></p>
+        </div>
+        <div class="expense-list" id="expenseList"></div>
+        <button class="floating-add" id="addExpenseButton" type="button" aria-label="Adicionar despesa" title="Adicionar despesa">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </section>
+
+      <section class="view-panel history-panel" id="historyView" aria-labelledby="historyHeading" hidden>
+        <div class="section-heading history-title">
+          <div><p class="eyebrow">Visão geral</p><h1 id="historyHeading">Histórico</h1></div>
+          <button class="primary-small" id="historyNewMonthButton" type="button">+ Novo mês</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+        <div class="empty-state history-empty" id="historyEmpty" hidden>
+          <span class="empty-icon" aria-hidden="true">↗</span>
+          <h2>Ainda sem histórico</h2>
+          <p>Cria o teu primeiro mês para começares a acompanhar o teu dinheiro.</p>
+          <button class="primary-button" id="firstMonthButton" type="button">Criar primeiro mês</button>
+        </div>
+      </section>
+    </main>
+    <section class="local-data-notice" aria-live="polite">
+      <span class="local-data-label">Dados neste dispositivo</span>
+      <p>Os teus dados ficam guardados localmente. Exporta um ficheiro para transferi-los ou manter uma cópia de segurança.</p>
+    </section>
+    <footer class="app-footer">
+      <p class="app-version" id="appVersion">Eco+ v1.2.1</p>
+      <p class="credit-note">Made with <span aria-label="amor">♥</span> by Alex</p>
+    </footer>
+  </div>
+
+  <dialog class="sheet-dialog" id="expenseDialog" aria-labelledby="expenseDialogTitle">
+    <form class="sheet-form" id="expenseForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow" id="expenseMonthLabel">Mês</p><h2 id="expenseDialogTitle">Novo movimento</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <input id="expenseId" type="hidden">
+      <label class="field-label" for="expenseAmount">Valor</label>
+      <div class="amount-input-wrap"><input id="expenseAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0,00" required><span>€</span></div>
+      <label class="field-label" for="expenseName">Descrição</label>
+      <input class="text-input" id="expenseName" name="name" type="text" maxlength="60" placeholder="Ex.: Supermercado" required>
+      <div class="field-row">
+        <div class="field-column"><label class="field-label" for="expenseCategory">Categoria</label><select class="text-input" id="expenseCategory" name="category" required></select></div>
+        <div class="field-column"><label class="field-label" for="expenseType">Tipo</label><select class="text-input" id="expenseType" name="type" required><option value="expense">Despesa</option><option value="refund">Reembolso</option><option value="received">Recebido</option></select></div>
+      </div>
+      <label class="field-label" for="expenseDate">Data</label>
+      <input class="text-input" id="expenseDate" name="date" type="date" required>
+      <p class="form-error" id="expenseError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Adicionar movimento</button>
+      <button class="delete-button" id="deleteExpenseButton" type="button" hidden>Eliminar despesa</button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="monthDialog" aria-labelledby="monthDialogTitle">
+    <form class="sheet-form" id="monthForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Organiza o teu dinheiro</p><h2 id="monthDialogTitle">Novo mês</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <label class="field-label" for="monthDate">Mês</label>
+      <input class="text-input" id="monthDate" name="month" type="month" required>
+      <label class="field-label" for="monthIncome">Quanto recebeste?</label>
+      <div class="amount-input-wrap"><input id="monthIncome" name="income" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00" required><span>€</span></div>
+      <p class="form-error" id="monthError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Criar mês</button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="incomeDialog" aria-labelledby="incomeDialogTitle">
+    <form class="sheet-form" id="incomeForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow" id="incomeMonthLabel">Mês</p><h2 id="incomeDialogTitle">Alterar rendimento</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <label class="field-label" for="incomeValue">Valor recebido</label>
+      <div class="amount-input-wrap"><input id="incomeValue" name="income" type="number" inputmode="decimal" min="0" step="0.01" required><span>€</span></div>
+      <p class="form-error" id="incomeError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Guardar rendimento</button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="profileDialog" aria-labelledby="profileDialogTitle">
+    <form class="sheet-form" id="profileForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Perfil</p><h2 id="profileDialogTitle">O teu nome</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <label class="field-label" for="profileName">Nome</label>
+      <input class="text-input" id="profileName" name="name" type="text" maxlength="30" placeholder="Ex.: João" required>
+      <p class="form-error" id="profileError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Guardar nome</button>
+      <section class="profile-backup-block appearance-settings" aria-labelledby="appearanceSettingsHeading">
+        <div>
+          <p class="field-label">Personalização</p>
+          <h3 class="settings-heading" id="appearanceSettingsHeading">Aparência e conforto</h3>
+        </div>
+        <label class="field-label" for="themeModeSelect">Modo de cor</label>
+        <select class="text-input" id="themeModeSelect">
+          <option value="system">Automático (seguir o dispositivo)</option>
+          <option value="light">Claro</option>
+          <option value="dark">Escuro</option>
+        </select>
+        <label class="field-label" for="colorPaletteSelect">Paleta de cores</label>
+        <select class="text-input" id="colorPaletteSelect">
+          <option value="green">Verde floresta</option>
+          <option value="ocean">Azul oceano</option>
+          <option value="lavender">Lavanda</option>
+          <option value="amber">Âmbar</option>
+        </select>
+        <label class="setting-toggle" for="compactModeToggle">
+          <span><strong>Vista compacta</strong><small>Reduz espaços para mostrar mais conteúdo.</small></span>
+          <input id="compactModeToggle" type="checkbox">
+        </label>
+        <label class="setting-toggle" for="reducedMotionToggle">
+          <span><strong>Reduzir animações</strong><small>Usa transições mais discretas.</small></span>
+          <input id="reducedMotionToggle" type="checkbox">
+        </label>
+      </section>
+      <div class="profile-backup-block">
+        <p class="field-label">Cópia de segurança</p>
+        <p class="profile-backup-description">Exporta o teu nome, preferências, mês selecionado, rendimentos, despesas, reembolsos e subscrições para um ficheiro JSON. Podes importá-lo noutro dispositivo.</p>
+        <div class="backup-actions">
+          <button class="secondary-button" id="exportDataButton" type="button">Exportar dados</button>
+          <button class="secondary-button" id="importDataButton" type="button">Importar ficheiro</button>
+        </div>
+        <input id="importDataFile" type="file" accept="application/json,.json" hidden>
+        <p class="form-error" id="backupError" role="alert" hidden></p>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet-dialog compact-dialog" id="subscriptionDialog" aria-labelledby="subscriptionDialogTitle">
+    <form class="sheet-form" id="subscriptionForm">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-heading"><div><p class="eyebrow">Pagamento recorrente</p><h2 id="subscriptionDialogTitle">Nova subscrição</h2></div><button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button></div>
+      <input id="subscriptionId" type="hidden">
+      <label class="field-label" for="subscriptionName">Nome</label>
+      <input class="text-input" id="subscriptionName" name="name" type="text" maxlength="60" placeholder="Ex.: Música" required>
+      <label class="field-label" for="subscriptionAmount">Valor mensal</label>
+      <div class="amount-input-wrap"><input id="subscriptionAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="0,00" required><span>€</span></div>
+      <label class="field-label" for="subscriptionStartMonth">Começa no mês</label>
+      <input class="text-input" id="subscriptionStartMonth" name="startMonth" type="month" required>
+      <label class="field-label" for="subscriptionEndDate">Subscrição válida até</label>
+      <input class="text-input" id="subscriptionEndDate" name="endDate" type="date" required>
+      <p class="form-error" id="subscriptionError" role="alert" hidden></p>
+      <button class="primary-button submit-button" type="submit">Guardar subscrição</button>
+      <button class="delete-button" id="deleteSubscriptionButton" type="button" hidden>Eliminar subscrição</button>
+    </form>
+  </dialog>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
